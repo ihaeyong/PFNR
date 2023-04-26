@@ -1,8 +1,8 @@
 #!bin/bash
 
 # create enviroment using Miniconda (or Anaconda)
-conda create -n clip python=3.8
-conda activate clip
+conda create -n NeRV python=3.8
+source activate NeRV
 
 # install pytorch
 pip install torch==1.8.2 torchvision==0.9.2 torchaudio==0.8.2 \
@@ -11,9 +11,7 @@ pip install torch==1.8.2 torchvision==0.9.2 torchaudio==0.8.2 \
 # install other dependencies
 pip install -r requirements.txt
 
-# install CLIP
-pip install git+https://github.com/openai/CLIP.git
-
+pip install wandb
 
 # torch install
 # CUDA 11.6

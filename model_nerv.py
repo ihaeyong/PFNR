@@ -6,6 +6,9 @@ import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import Dataset
 
+from model.subnet import SubnetConv2d, SubnetLinear, SubnetConvTranspose2d
+
+
 class CustomDataSet(Dataset):
     def __init__(self, main_dir, transform, vid_list=[None], frame_gap=1,  visualize=False):
         self.main_dir = main_dir
@@ -15,13 +18,12 @@ class CustomDataSet(Dataset):
         all_imgs = os.listdir(main_dir)
         all_imgs.sort()
 
-        num_frame = 0 
+        num_frame = 0
         for img_id in all_imgs:
             self.frame_path.append(img_id)
             frame_idx.append(num_frame)
-            num_frame += 1          
+            num_frame += 1
 
-        # import pdb; pdb.set_trace; from IPython import embed; embed()
         accum_img_num.append(num_frame)
         self.frame_idx = [float(x) / len(frame_idx) for x in frame_idx]
         self.accum_img_num = np.asfarray(accum_img_num)
@@ -53,6 +55,7 @@ class Sin(nn.Module):
 
 
 def ActivationLayer(act_type):
+
     if act_type == 'relu':
         act_layer = nn.ReLU(True)
     elif act_type == 'leaky':
@@ -77,7 +80,8 @@ def ActivationLayer(act_type):
     return act_layer
 
 
-def NormLayer(norm_type, ch_width):    
+def NormLayer(norm_type, ch_width):
+
     if norm_type == 'none':
         norm_layer = nn.Identity()
     elif norm_type == 'bn':
@@ -95,20 +99,50 @@ class CustomConv(nn.Module):
         super(CustomConv, self).__init__()
 
         ngf, new_ngf, stride = kargs['ngf'], kargs['new_ngf'], kargs['stride']
+        self.subnet= kargs['subnet']
+        self.sparsity = kargs['sparsity']
         self.conv_type = kargs['conv_type']
         if self.conv_type == 'conv':
-            self.conv = nn.Conv2d(ngf, new_ngf * stride * stride, 3, 1, 1, bias=kargs['bias'])
+            if not self.subnet:
+                self.conv = nn.Conv2d(ngf, new_ngf * stride * stride, 3, 1, 1, bias=kargs['bias'])
+            else:
+                self.conv = SubnetConv2d(ngf, new_ngf * stride * stride, 3, 1, 1, bias=kargs['bias'], sparsity=self.sparsity)
+
             self.up_scale = nn.PixelShuffle(stride)
         elif self.conv_type == 'deconv':
-            self.conv = nn.ConvTranspose2d(ngf, new_ngf, stride, stride)
+            if not self.subnet:
+                self.conv = nn.ConvTranspose2d(ngf, new_ngf, stride, stride)
+            else:
+                self.conv = SubnetConvTranspose2d(ngf, new_ngf, stride, stride, sparsity=self.sparsity)
             self.up_scale = nn.Identity()
         elif self.conv_type == 'bilinear':
-            self.conv = nn.Upsample(scale_factor=stride, mode='bilinear', align_corners=True)
-            self.up_scale = nn.Conv2d(ngf, new_ngf, 2*stride+1, 1, stride, bias=kargs['bias'])
+            if not self.subnet:
+                self.conv = nn.Upsample(scale_factor=stride, mode='bilinear', align_corners=True)
+                self.up_scale = nn.Conv2d(ngf, new_ngf, 2*stride+1, 1, stride, bias=kargs['bias'])
+            else:
+                self.conv = None
+                self.up_scale = None
 
     def forward(self, x):
         out = self.conv(x)
         return self.up_scale(out)
+
+
+# Multiple Input Sequential
+class Sequential(nn.Sequential):
+
+    def forward(self, *inputs):
+        inputs = inputs[0]
+        mask = inputs[1]
+        mode = inputs[2]
+
+        for module in self._modules.values():
+            if isinstance(module, SubnetMLP):
+                inputs = module(inputs, mask, mode)
+            else:
+                inputs = module(inputs)
+
+        return inputs
 
 
 def MLP(dim_list, act='relu', bias=True):
@@ -119,12 +153,29 @@ def MLP(dim_list, act='relu', bias=True):
     return nn.Sequential(*fc_list)
 
 
+def SubnetMLP(dim_list, act='relu', bias=True, sparsity=0.3, name='mlp'):
+    act_fn = ActivationLayer(act)
+    fc_list = []
+    for i in range(len(dim_list) - 1):
+        fc_name = name + '.' + str(i)
+        fc_list += [SubnetLinear(dim_list[i], dim_list[i+1], bias=bias,
+                                 sparsity=sparsity), act_fn]
+    return Sequential(*fc_list)
+
+
 class NeRVBlock(nn.Module):
     def __init__(self, **kargs):
         super().__init__()
 
-        self.conv = CustomConv(ngf=kargs['ngf'], new_ngf=kargs['new_ngf'], stride=kargs['stride'], bias=kargs['bias'], 
-            conv_type=kargs['conv_type'])
+        self.name = 'name'
+        self.conv = CustomConv(ngf=kargs['ngf'],
+                               new_ngf=kargs['new_ngf'],
+                               stride=kargs['stride'],
+                               bias=kargs['bias'],
+                               conv_type=kargs['conv_type'],
+                               subnet=kargs['subnet'],
+                               sparsity=kargs['sparsity'])
+
         self.norm = NormLayer(kargs['norm'], kargs['new_ngf'])
         self.act = ActivationLayer(kargs['act'])
 
@@ -136,11 +187,18 @@ class Generator(nn.Module):
     def __init__(self, **kargs):
         super().__init__()
 
+        self.name = 'generator'
         stem_dim, stem_num = [int(x) for x in kargs['stem_dim_num'].split('_')]
         self.fc_h, self.fc_w, self.fc_dim = [int(x) for x in kargs['fc_hw_dim'].split('_')]
         mlp_dim_list = [kargs['embed_length']] + [stem_dim] * stem_num + [self.fc_h *self.fc_w *self.fc_dim]
-        self.stem = MLP(dim_list=mlp_dim_list, act=kargs['act'])
-        
+
+        self.subnet = kargs['subnet']
+        self.sparsity = kargs['sparsity']
+        if not self.subnet:
+            self.stem = MLP(dim_list=mlp_dim_list, act=kargs['act'])
+        else:
+            self.stem = SubnetMLP(dim_list=mlp_dim_list, act=kargs['act'], sparsity=self.sparsity)
+
         # BUILD CONV LAYERS
         self.layers, self.head_layers = [nn.ModuleList() for _ in range(2)]
         ngf = self.fc_dim
@@ -154,20 +212,25 @@ class Generator(nn.Module):
 
             for j in range(kargs['num_blocks']):
                 self.layers.append(NeRVBlock(ngf=ngf, new_ngf=new_ngf, stride=1 if j else stride,
-                    bias=kargs['bias'], norm=kargs['norm'], act=kargs['act'], conv_type=kargs['conv_type']))
+                                             bias=kargs['bias'], norm=kargs['norm'], act=kargs['act'], conv_type=kargs['conv_type'], subnet=self.subnet, sparsity=self.sparsity))
                 ngf = new_ngf
 
             # build head classifier, upscale feature layer, upscale img layer 
             head_layer = [None]
             if kargs['sin_res']:
                 if i == len(kargs['stride_list']) - 1:
-                    head_layer = nn.Conv2d(ngf, 3, 1, 1, bias=kargs['bias']) 
-                    # head_layer = nn.Conv2d(ngf, 3, 3, 1, 1, bias=kargs['bias']) 
+                    if self.subnet:
+                        head_layer = nn.Conv2d(ngf, 3, 1, 1, bias=kargs['bias']) 
+                    else:
+                        head_layer = SubnetConv2d(ngf, 3, 1, 1, bias=kargs['bias'], sparsity=self.sparsity)
+
                 else:
                     head_layer = None
             else:
-                head_layer = nn.Conv2d(ngf, 3, 1, 1, bias=kargs['bias'])
-                # head_layer = nn.Conv2d(ngf, 3, 3, 1, 1, bias=kargs['bias'])
+                if not self.subnet:
+                    head_layer = nn.Conv2d(ngf, 3, 1, 1, bias=kargs['bias'])
+                else:
+                    head_layer = SubnetConv2d(ngf, 3, 1, 1, bias=kargs['bias'], sparsity=self.sparsity)
             self.head_layers.append(head_layer)
         self.sigmoid =kargs['sigmoid']
 
@@ -176,10 +239,13 @@ class Generator(nn.Module):
         output = output.view(output.size(0), self.fc_dim, self.fc_h, self.fc_w)
 
         out_list = []
+
+        import ipdb; ipdb.set_trace()
         for layer, head_layer in zip(self.layers, self.head_layers):
-            output = layer(output) 
+            output = layer(output)
             if head_layer is not None:
                 img_out = head_layer(output)
+
                 # normalize the final output iwth sigmoid or tanh function
                 img_out = torch.sigmoid(img_out) if self.sigmoid else (torch.tanh(img_out) + 1) * 0.5
                 out_list.append(img_out)

@@ -1,0 +1,57 @@
+# compilation and distribution
+__pycache__/
+/methods/__pycache__/*.pyc
+/methods/archs/__pycache__/*.pyc
+/methods/optim/__pycache__/*.pyc
+_ext
+/utils/__pycache__/*.pyc
+
+*.so
+maskrcnn_benchmark.egg-info/
+pysgg.egg-info/
+build/
+dist/
+DataSet/
+tb_logger/
+wandb/
+exp/
+increment/
+output/
+
+# ipython/jupyter notebooks
+#*.ipynb
+**/.ipynb_checkpoints/
+
+# Editor temporaries
+*.swn
+*.swo
+*.swp
+*.pyc
+*~
+
+# Pycharm editor settings
+.idea
+
+# vscode editor settings
+.vscode
+.github
+
+.flake8
+
+# MacOS
+.DS_Store
+
+# scripts/*
+
+pymp-*
+
+jupyter
+
+.nfs*
+
+/data/*
+/checkpoints
+
+
+.vsub
+service*.out.node*
