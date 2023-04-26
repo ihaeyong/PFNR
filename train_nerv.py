@@ -196,6 +196,9 @@ def main():
     if args.bias:
         exp_name += '_bias'
 
+    exp_name += '_fc' + str(args.fc_hw_dim)
+    args.exp_name = exp_name
+
     wandb.init(project='NeRV_{}'.format(args.dataset),
                entity='haeyong', name=exp_name, config=args)
 
@@ -345,11 +348,14 @@ def train(local_rank, args):
 
     if False:
         data_list = glob.glob("./data/*")
-    else:
+    elif False:
         data_list = ['./data/bee'      , './data/graph' , './data/elgasia'      , './data/jockey',
                      './data/bosphorus', './data/shake' , './data/yacht'        , './data/setgo' ,
                      './data/beauty'   , './data/casino', './data/elgasia_small', './data/setgoshake',
                      './data/nwc'      , './data/bunny']
+    elif True:
+        data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
+                     './data/jockey', './data/setgo', './data/shake', './data/yacht']
 
     n_tasks = len(data_list)
     psnr_matrix = np.zeros((n_tasks, n_tasks))
