@@ -19,6 +19,7 @@ if [ $2 == 'train' ]; then
            --subnet --sparsity $3 \
            --exp_name subnet
 
+
 elif [ $2 == 'eval' ]; then
     python train_nerv.py -e 300 \
            --lower-width 96 --num-blocks 1 \

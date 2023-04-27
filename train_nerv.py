@@ -530,7 +530,7 @@ def train(local_rank, args):
 
         # Restore the best model
         set_model(model,best_model)
-        train_time_dict[task_id] = total_epoch_train_timme
+        train_time_dict[task_id] = total_epoch_train_time
 
         if args.subnet:
             per_task_masks[task_id] = model.get_masks()
@@ -550,7 +550,8 @@ def train(local_rank, args):
             'per_task_masks': per_task_masks,
             'consolidated_masks': consolidated_masks,
         }
-        torch.save(save_checkpoint, 'output/{}/model_val_best.pth'.format(args.exp_name))
+        os.makedirs('./output/{}'.format(args.exp_name), exist_ok=True)
+        torch.save(save_checkpoint, './output/{}/model_task{}_val_best.pth'.format(args.exp_name, task_id))
 
         for task_jd, cla in taskcla:
             val_dataloader = val_dataloader_dict[task_jd]
@@ -585,9 +586,9 @@ def train(local_rank, args):
 
         if local_rank in [0, None]:
             # state_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
-            torch.save(save_checkpoint, './output/{}/model_latest.pth'.format(args.exp_name))
+            torch.save(save_checkpoint, './output/{}/model_task{}_latest.pth'.format(args.exp_name, task_id))
             if is_train_best:
-                torch.save(save_checkpoint, './output/{}/model_train_best.pth'.format(args.exp_name))
+                torch.save(save_checkpoint, './output/{}/model_train_task{}_best.pth'.format(args.exp_name, task_id))
 
     print('*' * 50)
     print("Training complete in: " + str(datetime.now() - start))
