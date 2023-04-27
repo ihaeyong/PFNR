@@ -20,7 +20,7 @@ import torchvision.transforms as transforms
 from tqdm import tqdm
 
 from model_nerv import CustomDataSet, Generator
-from model_subnet_nerv import SubnetGenerator
+from model_subnet_nerv import SubnetGenerator, SubnetGeneratorMH
 from utils import *
 
 import glob
@@ -139,6 +139,7 @@ def main():
     parser.add_argument('--outf', default='unify', help='folder to output images and model checkpoints')
     parser.add_argument('--suffix', default='', help="suffix str for outf")
 
+    parser.add_argument('--n_tasks', type=int, default=7, help='number of tasks')
     parser.add_argument('--subnet', action='store_true', default=False, help='subnet')
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
@@ -214,20 +215,33 @@ def train(local_rank, args):
     np.random.seed(args.manualSeed)
     random.seed(args.manualSeed)
 
+    if False:
+        data_list = glob.glob("./data/*")
+    elif False:
+        data_list = ['./data/bee'      , './data/graph' , './data/elgasia'      , './data/jockey',
+                     './data/bosphorus', './data/shake' , './data/yacht'        , './data/setgo' ,
+                     './data/beauty'   , './data/casino', './data/elgasia_small', './data/setgoshake',
+                     './data/nwc'      , './data/bunny']
+    elif True:
+        data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
+                     './data/jockey', './data/setgo', './data/shake', './data/yacht']
+
+    args.n_tasks = len(data_list)
+
     PE = PositionalEncoding(args.embed)
     args.embed_length = PE.embed_length
 
     # define task_masks
     per_task_masks = {}
-    task_id = 0
+
     if args.subnet:
-        model = SubnetGenerator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
+        model = SubnetGeneratorMH(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
                                 fc_hw_dim=args.fc_hw_dim, expansion=args.expansion,
                                 num_blocks=args.num_blocks, norm=args.norm, act=args.act,
                                 bias=args.bias, reduction=args.reduction, conv_type=args.conv_type,
                                 stride_list=args.strides,  sin_res=args.single_res,
                                 lower_width=args.lower_width, sigmoid=args.sigmoid,
-                                sparsity=args.sparsity)
+                                sparsity=args.sparsity, n_tasks=args.n_tasks)
 
     else:
         model = Generator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
@@ -291,7 +305,6 @@ def train(local_rank, args):
     else:
         model = model.cuda()
 
-
     # resume from args.weight
     checkpoint = None
     loc = 'cuda:{}'.format(local_rank if local_rank is not None else 0)
@@ -346,20 +359,8 @@ def train(local_rank, args):
     img_transforms = transforms.ToTensor()
     DataSet = CustomDataSet
 
-    if False:
-        data_list = glob.glob("./data/*")
-    elif False:
-        data_list = ['./data/bee'      , './data/graph' , './data/elgasia'      , './data/jockey',
-                     './data/bosphorus', './data/shake' , './data/yacht'        , './data/setgo' ,
-                     './data/beauty'   , './data/casino', './data/elgasia_small', './data/setgoshake',
-                     './data/nwc'      , './data/bunny']
-    elif True:
-        data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
-                     './data/jockey', './data/setgo', './data/shake', './data/yacht']
-
-    n_tasks = len(data_list)
-    psnr_matrix = np.zeros((n_tasks, n_tasks))
-    msssim_matrix = np.zeros((n_tasks, n_tasks))
+    psnr_matrix = np.zeros((args.n_tasks, args.n_tasks))
+    msssim_matrix = np.zeros((args.n_tasks, args.n_tasks))
     taskcla = [(task_id, name.split('/')[-1])for task_id, name in enumerate(data_list)]
     print(taskcla)
 
@@ -431,6 +432,12 @@ def train(local_rank, args):
                 if i > 10 and args.debug:
                     break
                 embed_input = PE(norm_idx)
+
+                if True:
+                    task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
+                    embed_task = PE(task_idx)
+                    embed_input = torch.cat([embed_input, embed_task], 1)
+
                 if local_rank is not None:
                     data = data.cuda(local_rank, non_blocking=True)
                     embed_input = embed_input.cuda(local_rank, non_blocking=True)
@@ -438,7 +445,7 @@ def train(local_rank, args):
                     data, embed_input = data.cuda(non_blocking=True), embed_input.cuda(non_blocking=True)
 
                 # forward and backward
-                output_list = model(embed_input)
+                output_list = model(embed_input, task_id=task_id)
                 target_list = [F.adaptive_avg_pool2d(data, x.shape[-2:]) for x in output_list]
                 loss_list = [loss_fn(output, target, args) for output, target in zip(output_list, target_list)]
                 loss_list = [loss_list[i] * (args.lw if i < len(loss_list) - 1 else 1) for i in range(len(loss_list))]
@@ -573,14 +580,14 @@ def train(local_rank, args):
             print('PSNR =')
             for i_a in range(task_id+1):
                 print('\t',end='')
-                for j_a in range(n_tasks):
+                for j_a in range(args.n_tasks):
                     print('{:5.1f} '.format(psnr_matrix[i_a, j_a]),end='')
                 print()
 
             print('MSSIM =')
             for i_a in range(task_id+1):
                 print('\t',end='')
-                for j_a in range(n_tasks):
+                for j_a in range(args.n_tasks):
                     print('{:5.1f} '.format(msssim_matrix[i_a, j_a]),end='')
                 print()
 
@@ -684,6 +691,11 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
         if i > 10 and args.debug:
             break
         embed_input = pe(norm_idx)
+        if True:
+            task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
+            embed_task = pe(task_idx)
+            embed_input = torch.cat([embed_input, embed_task], 1)
+
         if local_rank is not None:
             data = data.cuda(local_rank, non_blocking=True)
             embed_input = embed_input.cuda(local_rank, non_blocking=True)

@@ -17,7 +17,8 @@ if [ $2 == 'train' ]; then
            -b 1  --lr 0.0005 \
            --norm none --act swish \
            --subnet --sparsity $3 \
-           --exp_name subnet
+           --exp_name subnet_multi-heads-video
+
 
 
 elif [ $2 == 'eval' ]; then
