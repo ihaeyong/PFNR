@@ -17,7 +17,7 @@ if [ $2 == 'train' ]; then
            -b 1  --lr 0.0005 \
            --norm none --act swish \
            --subnet --sparsity $3 \
-           --exp_name subnet_multi-heads \
+           --exp_name subnet_multi-heads-video \
            --epochs 50
 
 elif [ $2 == 'eval' ]; then

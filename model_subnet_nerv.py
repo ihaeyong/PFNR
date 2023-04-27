@@ -229,7 +229,7 @@ class SubnetGenerator(nn.Module):
         self.name = 'generator'
         stem_dim, stem_num = [int(x) for x in kargs['stem_dim_num'].split('_')]
         self.fc_h, self.fc_w, self.fc_dim = [int(x) for x in kargs['fc_hw_dim'].split('_')]
-        mlp_dim_list = [kargs['embed_length']] + [stem_dim] * stem_num + [self.fc_h *self.fc_w *self.fc_dim]
+        mlp_dim_list = [kargs['embed_length'] * 2] + [stem_dim] * stem_num + [self.fc_h *self.fc_w *self.fc_dim]
 
         self.sparsity = kargs['sparsity']
         self.stem = SubnetMLP(dim_list=mlp_dim_list, bias= kargs['bias'],
@@ -315,7 +315,7 @@ class SubnetGeneratorMH(nn.Module):
         self.name = 'generator'
         stem_dim, stem_num = [int(x) for x in kargs['stem_dim_num'].split('_')]
         self.fc_h, self.fc_w, self.fc_dim = [int(x) for x in kargs['fc_hw_dim'].split('_')]
-        mlp_dim_list = [kargs['embed_length']] + [stem_dim] * stem_num + [self.fc_h *self.fc_w *self.fc_dim]
+        mlp_dim_list = [kargs['embed_length'] * 2] + [stem_dim] * stem_num + [self.fc_h *self.fc_w *self.fc_dim]
 
         self.sparsity = kargs['sparsity']
         self.stem = SubnetMLP(dim_list=mlp_dim_list, bias= kargs['bias'],
@@ -371,6 +371,7 @@ class SubnetGeneratorMH(nn.Module):
             per_task_mask = mask[task_id]
         else:
             per_task_mask = None
+
 
         output = self.stem(x, task_id=task_id, mask=per_task_mask, mode=mode)
         output = output.view(output.size(0), self.fc_dim, self.fc_h, self.fc_w)

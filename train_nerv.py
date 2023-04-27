@@ -304,7 +304,6 @@ def train(local_rank, args):
     else:
         model = model.cuda()
 
-
     # resume from args.weight
     checkpoint = None
     loc = 'cuda:{}'.format(local_rank if local_rank is not None else 0)
@@ -432,6 +431,12 @@ def train(local_rank, args):
                 if i > 10 and args.debug:
                     break
                 embed_input = PE(norm_idx)
+
+                if True:
+                    task_idx = torch.tensor([(task_id+1) / (n_tasks + 1)])
+                    embed_task = PE(task_idx)
+                    embed_input = torch.cat([embed_input, embed_task], 1)
+
                 if local_rank is not None:
                     data = data.cuda(local_rank, non_blocking=True)
                     embed_input = embed_input.cuda(local_rank, non_blocking=True)
@@ -685,6 +690,12 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
         if i > 10 and args.debug:
             break
         embed_input = pe(norm_idx)
+
+        if True:
+            task_idx = torch.tensor([(task_id+1) / (n_tasks + 1)])
+            embed_task = PE(task_idx)
+            embed_input = torch.cat([embed_input, embed_task], 1)
+
         if local_rank is not None:
             data = data.cuda(local_rank, non_blocking=True)
             embed_input = embed_input.cuda(local_rank, non_blocking=True)
