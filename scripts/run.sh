@@ -17,8 +17,8 @@ if [ $2 == 'train' ]; then
            -b 1  --lr 0.0005 \
            --norm none --act swish \
            --subnet --sparsity $3 \
-           --exp_name subnet_multi-heads-video \
-           --epochs 50
+           --exp_name subnet_multi-heads-video
+
 
 elif [ $2 == 'eval' ]; then
     python train_nerv.py -e 300 \

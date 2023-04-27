@@ -139,6 +139,7 @@ def main():
     parser.add_argument('--outf', default='unify', help='folder to output images and model checkpoints')
     parser.add_argument('--suffix', default='', help="suffix str for outf")
 
+    parser.add_argument('--n_tasks', type=int, default=7, help='number of tasks')
     parser.add_argument('--subnet', action='store_true', default=False, help='subnet')
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
@@ -225,7 +226,7 @@ def train(local_rank, args):
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
                      './data/jockey', './data/setgo', './data/shake', './data/yacht']
 
-    n_tasks = len(data_list)
+    args.n_tasks = len(data_list)
 
     PE = PositionalEncoding(args.embed)
     args.embed_length = PE.embed_length
@@ -240,7 +241,7 @@ def train(local_rank, args):
                                 bias=args.bias, reduction=args.reduction, conv_type=args.conv_type,
                                 stride_list=args.strides,  sin_res=args.single_res,
                                 lower_width=args.lower_width, sigmoid=args.sigmoid,
-                                sparsity=args.sparsity, n_tasks=n_tasks)
+                                sparsity=args.sparsity, n_tasks=args.n_tasks)
 
     else:
         model = Generator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
@@ -358,8 +359,8 @@ def train(local_rank, args):
     img_transforms = transforms.ToTensor()
     DataSet = CustomDataSet
 
-    psnr_matrix = np.zeros((n_tasks, n_tasks))
-    msssim_matrix = np.zeros((n_tasks, n_tasks))
+    psnr_matrix = np.zeros((args.n_tasks, args.n_tasks))
+    msssim_matrix = np.zeros((args.n_tasks, args.n_tasks))
     taskcla = [(task_id, name.split('/')[-1])for task_id, name in enumerate(data_list)]
     print(taskcla)
 
@@ -433,7 +434,7 @@ def train(local_rank, args):
                 embed_input = PE(norm_idx)
 
                 if True:
-                    task_idx = torch.tensor([(task_id+1) / (n_tasks + 1)])
+                    task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
                     embed_task = PE(task_idx)
                     embed_input = torch.cat([embed_input, embed_task], 1)
 
@@ -579,14 +580,14 @@ def train(local_rank, args):
             print('PSNR =')
             for i_a in range(task_id+1):
                 print('\t',end='')
-                for j_a in range(n_tasks):
+                for j_a in range(args.n_tasks):
                     print('{:5.1f} '.format(psnr_matrix[i_a, j_a]),end='')
                 print()
 
             print('MSSIM =')
             for i_a in range(task_id+1):
                 print('\t',end='')
-                for j_a in range(n_tasks):
+                for j_a in range(args.n_tasks):
                     print('{:5.1f} '.format(msssim_matrix[i_a, j_a]),end='')
                 print()
 
@@ -690,10 +691,9 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
         if i > 10 and args.debug:
             break
         embed_input = pe(norm_idx)
-
         if True:
-            task_idx = torch.tensor([(task_id+1) / (n_tasks + 1)])
-            embed_task = PE(task_idx)
+            task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
+            embed_task = pe(task_idx)
             embed_input = torch.cat([embed_input, embed_task], 1)
 
         if local_rank is not None:
