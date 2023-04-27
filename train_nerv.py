@@ -20,7 +20,7 @@ import torchvision.transforms as transforms
 from tqdm import tqdm
 
 from model_nerv import CustomDataSet, Generator
-from model_subnet_nerv import SubnetGenerator
+from model_subnet_nerv import SubnetGenerator, SubnetGeneratorMH
 from utils import *
 
 import glob
@@ -214,20 +214,33 @@ def train(local_rank, args):
     np.random.seed(args.manualSeed)
     random.seed(args.manualSeed)
 
+    if False:
+        data_list = glob.glob("./data/*")
+    elif False:
+        data_list = ['./data/bee'      , './data/graph' , './data/elgasia'      , './data/jockey',
+                     './data/bosphorus', './data/shake' , './data/yacht'        , './data/setgo' ,
+                     './data/beauty'   , './data/casino', './data/elgasia_small', './data/setgoshake',
+                     './data/nwc'      , './data/bunny']
+    elif True:
+        data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
+                     './data/jockey', './data/setgo', './data/shake', './data/yacht']
+
+    n_tasks = len(data_list)
+
     PE = PositionalEncoding(args.embed)
     args.embed_length = PE.embed_length
 
     # define task_masks
     per_task_masks = {}
-    task_id = 0
+
     if args.subnet:
-        model = SubnetGenerator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
+        model = SubnetGeneratorMH(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
                                 fc_hw_dim=args.fc_hw_dim, expansion=args.expansion,
                                 num_blocks=args.num_blocks, norm=args.norm, act=args.act,
                                 bias=args.bias, reduction=args.reduction, conv_type=args.conv_type,
                                 stride_list=args.strides,  sin_res=args.single_res,
                                 lower_width=args.lower_width, sigmoid=args.sigmoid,
-                                sparsity=args.sparsity)
+                                sparsity=args.sparsity, n_tasks=n_tasks)
 
     else:
         model = Generator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
@@ -346,18 +359,6 @@ def train(local_rank, args):
     img_transforms = transforms.ToTensor()
     DataSet = CustomDataSet
 
-    if False:
-        data_list = glob.glob("./data/*")
-    elif False:
-        data_list = ['./data/bee'      , './data/graph' , './data/elgasia'      , './data/jockey',
-                     './data/bosphorus', './data/shake' , './data/yacht'        , './data/setgo' ,
-                     './data/beauty'   , './data/casino', './data/elgasia_small', './data/setgoshake',
-                     './data/nwc'      , './data/bunny']
-    elif True:
-        data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
-                     './data/jockey', './data/setgo', './data/shake', './data/yacht']
-
-    n_tasks = len(data_list)
     psnr_matrix = np.zeros((n_tasks, n_tasks))
     msssim_matrix = np.zeros((n_tasks, n_tasks))
     taskcla = [(task_id, name.split('/')[-1])for task_id, name in enumerate(data_list)]
@@ -438,7 +439,7 @@ def train(local_rank, args):
                     data, embed_input = data.cuda(non_blocking=True), embed_input.cuda(non_blocking=True)
 
                 # forward and backward
-                output_list = model(embed_input)
+                output_list = model(embed_input, task_id=task_id)
                 target_list = [F.adaptive_avg_pool2d(data, x.shape[-2:]) for x in output_list]
                 loss_list = [loss_fn(output, target, args) for output, target in zip(output_list, target_list)]
                 loss_list = [loss_list[i] * (args.lw if i < len(loss_list) - 1 else 1) for i in range(len(loss_list))]
@@ -530,7 +531,7 @@ def train(local_rank, args):
 
         # Restore the best model
         set_model(model,best_model)
-        train_time_dict[task_id] = total_epoch_train_timme
+        train_time_dict[task_id] = total_epoch_train_time
 
         if args.subnet:
             per_task_masks[task_id] = model.get_masks()
@@ -550,7 +551,8 @@ def train(local_rank, args):
             'per_task_masks': per_task_masks,
             'consolidated_masks': consolidated_masks,
         }
-        torch.save(save_checkpoint, 'output/{}/model_val_best.pth'.format(args.exp_name))
+        os.makedirs('./output/{}'.format(args.exp_name), exist_ok=True)
+        torch.save(save_checkpoint, './output/{}/model_task{}_val_best.pth'.format(args.exp_name, task_id))
 
         for task_jd, cla in taskcla:
             val_dataloader = val_dataloader_dict[task_jd]
@@ -585,9 +587,9 @@ def train(local_rank, args):
 
         if local_rank in [0, None]:
             # state_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
-            torch.save(save_checkpoint, './output/{}/model_latest.pth'.format(args.exp_name))
+            torch.save(save_checkpoint, './output/{}/model_task{}_latest.pth'.format(args.exp_name, task_id))
             if is_train_best:
-                torch.save(save_checkpoint, './output/{}/model_train_best.pth'.format(args.exp_name))
+                torch.save(save_checkpoint, './output/{}/model_train_task{}_best.pth'.format(args.exp_name, task_id))
 
     print('*' * 50)
     print("Training complete in: " + str(datetime.now() - start))

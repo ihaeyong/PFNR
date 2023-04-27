@@ -266,7 +266,7 @@ class SubnetGenerator(nn.Module):
                 head_layer = HeadBlock(ngf=ngf, bias=kargs['bias'], sparsity=self.sparsity, name=name)
             self.head_layers.append(head_layer)
 
-        self.sigmoid =kargs['sigmoid']
+        self.sigmoid = kargs['sigmoid']
 
     def get_masks(self):
         task_mask = {}
@@ -297,6 +297,7 @@ class SubnetGenerator(nn.Module):
         for layer, head_layer in zip(self.layers, self.head_layers):
             output = layer(output, task_id=task_id, mask=per_task_mask, mode=mode)
             if head_layer is not None:
+
                 img_out = head_layer(output, task_id=task_id, mask=per_task_mask, mode=mode)
 
                 # normalize the final output iwth sigmoid or tanh function
@@ -304,4 +305,86 @@ class SubnetGenerator(nn.Module):
                 out_list.append(img_out)
 
         return  out_list
+
+
+
+class SubnetGeneratorMH(nn.Module):
+    def __init__(self, **kargs):
+        super().__init__()
+
+        self.name = 'generator'
+        stem_dim, stem_num = [int(x) for x in kargs['stem_dim_num'].split('_')]
+        self.fc_h, self.fc_w, self.fc_dim = [int(x) for x in kargs['fc_hw_dim'].split('_')]
+        mlp_dim_list = [kargs['embed_length']] + [stem_dim] * stem_num + [self.fc_h *self.fc_w *self.fc_dim]
+
+        self.sparsity = kargs['sparsity']
+        self.stem = SubnetMLP(dim_list=mlp_dim_list, bias= kargs['bias'],
+                              act=kargs['act'], sparsity=self.sparsity, name='stem')
+
+        # BUILD CONV LAYERS
+        self.layers, self.head_layers = [nn.ModuleList() for _ in range(2)]
+        ngf = self.fc_dim
+        for i, stride in enumerate(kargs['stride_list']):
+            if i == 0:
+                # expand channel width at first stage
+                new_ngf = int(ngf * kargs['expansion'])
+            else:
+                # change the channel width for each stage
+                new_ngf = max(ngf // (1 if stride == 1 else kargs['reduction']), kargs['lower_width'])
+
+            for j in range(kargs['num_blocks']):
+                name = 'layers.{}'.format(i)
+                self.layers.append(NeRVBlock(ngf=ngf, new_ngf=new_ngf, stride=1 if j else stride,
+                                             bias=kargs['bias'], norm=kargs['norm'], act=kargs['act'],
+                                             conv_type=kargs['conv_type'], sparsity=self.sparsity, name=name))
+                ngf = new_ngf
+
+        # kargs['sin_res']:
+        for t in range(kargs['n_tasks']):
+            head_layer = nn.Conv2d(ngf, 3, 1, 1, bias=kargs['bias'])
+            self.head_layers.append(head_layer)
+
+        self.sigmoid = kargs['sigmoid']
+
+    def get_masks(self):
+        task_mask = {}
+        for name, module in self.named_modules():
+
+            if 'head_layers' in name:
+                continue
+
+            # For the time being we only care about the current task outputhead
+            if isinstance(module, SubnetLinear) or isinstance(module, SubnetConv2d):
+                task_mask[name + '.weight'] = (module.weight_mask.detach().clone() > 0).type(torch.uint8)
+
+                if getattr(module, 'bias') is not None:
+                    task_mask[name + '.bias'] = (module.bias_mask.detach().clone() > 0).type(torch.uint8)
+                else:
+                    task_mask[name + '.bias'] = None
+
+        return task_mask
+
+
+    def forward(self, x, task_id=None, mask=None, mode="train"):
+
+        if mode == 'test':
+            per_task_mask = mask[task_id]
+        else:
+            per_task_mask = None
+
+        output = self.stem(x, task_id=task_id, mask=per_task_mask, mode=mode)
+        output = output.view(output.size(0), self.fc_dim, self.fc_h, self.fc_w)
+
+        out_list = []
+        for layer in self.layers:
+            output = layer(output, task_id=task_id, mask=per_task_mask, mode=mode)
+
+        img_out = self.head_layers[task_id](output)
+
+        # normalize the final output iwth sigmoid or tanh function
+        img_out = torch.sigmoid(img_out) if self.sigmoid else (torch.tanh(img_out) + 1) * 0.5
+        out_list.append(img_out)
+
+        return  out_list
+
 
