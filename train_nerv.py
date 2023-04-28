@@ -27,13 +27,6 @@ import glob
 from copy import deepcopy
 import wandb
 
-def get_model(model):
-    return deepcopy(model.state_dict())
-
-def set_model(model,state_dict):
-    model.load_state_dict(deepcopy(state_dict))
-    return
-
 def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
 
     if task_id == 0:
@@ -639,6 +632,10 @@ def train(local_rank, args):
     print(taskcla)
     print('-'*50)
     print(args)
+
+    safe_save('./output/{}/psnr_{}'.format(args.exp_name), psnr_matrix)
+    safe_save('./output/{}/msssim_{}'.format(args.exp_name), msssim_matrix)
+
 
 @torch.no_grad()
 def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_id, mode):

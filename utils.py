@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_msssim import ms_ssim, ssim
 
+from copy import deepcopy
+
 def quantize_per_tensor(t, bit=8, axis=-1):
     if axis == -1:
         t_valid = t!=0
@@ -235,3 +237,41 @@ class PositionalEncodingTrans(nn.Module):
         index = torch.round(pos * self.max_len).long()
         p = self.pe[index]
         return p
+
+
+def safe_load(file_name, cuda=False):
+
+    try:
+        if cuda:
+            result = np.load(file_name, allow_pickle=True).item()
+        else:
+            result = np.load(file_name)
+        print("sucessfully to load", file_name)
+    except:
+        print("failed to load", file_name)
+        import ipdb; ipdb.set_trace()
+        return
+
+    return result
+
+
+def safe_save(save_path, data):
+
+    # Make sure that the folders exists
+    hierarchy = save_path.split("/")
+    for i in range(1, len(hierarchy)):
+        folder = "/".join(hierarchy[:i])
+
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+
+    np.save(save_path, data)
+
+    print("Saved {}".format(save_path))
+
+def get_model(model):
+    return deepcopy(model.state_dict())
+
+def set_model(model,state_dict):
+    model.load_state_dict(deepcopy(state_dict))
+    return
