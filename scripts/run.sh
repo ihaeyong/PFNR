@@ -17,8 +17,8 @@ if [ $2 == 'train' ]; then
            -b 1  --lr 0.0005 \
            --norm none --act swish \
            --subnet --sparsity $3 \
-           --exp_name CVRNet_epoch10 \
-           --epochs 10
+           --exp_name CVRNet_epoch150 \
+           --epochs 150
 
 
 elif [ $2 == 'eval' ]; then
