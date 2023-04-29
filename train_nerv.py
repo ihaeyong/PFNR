@@ -193,7 +193,12 @@ def main():
     exp_name += '_fc' + str(args.fc_hw_dim)
     args.exp_name = exp_name
 
-    wandb.init(project='NeRV_{}'.format(args.dataset),
+    if 'UVG17' in args.dataset:
+        proj_name = 'UVG17'
+    else:
+        proj_name = args.dataset
+
+    wandb.init(project='NeRV_{}'.format(proj_name),
                entity='haeyong', name=exp_name, config=args)
 
     if args.distributed and args.ngpus_per_node > 1:
@@ -208,12 +213,33 @@ def train(local_rank, args):
     np.random.seed(args.manualSeed)
     random.seed(args.manualSeed)
 
-    if args.dataset == 'UVG17':
+    if args.dataset == 'UVG17A':
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
                      './data/jockey', './data/setgo', './data/shake', './data/yacht',
                      './data/city', './data/focus', './data/kids', './data/pan',
                      './data/lips', './data/race', './data/river', './data/sunbath',
                      './data/twilight']
+
+    elif args.dataset == 'UVG17B':
+        data_list = [
+            './data/bunny',
+            './data/city',
+            './data/beauty',
+            './data/focus',
+            './data/bosphorus',
+            './data/kids',
+            './data/bee',
+            './data/pan',
+            './data/jockey',
+            './data/lips',
+            './data/setgo',
+            './data/race',
+            './data/shake',
+            './data/river',
+            './data/yacht',
+            './data/sunbath',
+            './data/twilight'
+        ]
 
     elif args.dataset == 'UVG8':
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
