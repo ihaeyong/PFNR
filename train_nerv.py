@@ -208,14 +208,14 @@ def train(local_rank, args):
     np.random.seed(args.manualSeed)
     random.seed(args.manualSeed)
 
-    if False:
-        data_list = glob.glob("./data/*")
-    elif False:
-        data_list = ['./data/bee'      , './data/graph' , './data/elgasia'      , './data/jockey',
-                     './data/bosphorus', './data/shake' , './data/yacht'        , './data/setgo' ,
-                     './data/beauty'   , './data/casino', './data/elgasia_small', './data/setgoshake',
-                     './data/nwc'      , './data/bunny']
-    elif True:
+    if args.dataset == 'UVG17':
+        data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
+                     './data/jockey', './data/setgo', './data/shake', './data/yacht',
+                     './data/city', './data/focus', './data/kids', './data/pan',
+                     './data/lips', './data/race', './data/river', './data/sunbath',
+                     './data/twilight']
+
+    elif args.dataset == 'UVG8':
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
                      './data/jockey', './data/setgo', './data/shake', './data/yacht']
 
@@ -633,9 +633,8 @@ def train(local_rank, args):
     print('-'*50)
     print(args)
 
-    safe_save('./output/{}/psnr_{}'.format(args.exp_name), psnr_matrix)
-    safe_save('./output/{}/msssim_{}'.format(args.exp_name), msssim_matrix)
-
+    safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
+    safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
 
 @torch.no_grad()
 def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_id, mode):
