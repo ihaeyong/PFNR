@@ -124,8 +124,8 @@ def main():
                         help='url used to set up distributed training')
     parser.add_argument('-d', '--distributed', action='store_true', default=False, help='distributed training,  added to suffix!!!!')
 
-    # logging, output directory, 
-    parser.add_argument('--debug', action='store_true', help='defbug status, earlier for train/eval')  
+    # logging, output directory,
+    parser.add_argument('--debug', action='store_true', help='defbug status, earlier for train/eval')
     parser.add_argument('-p', '--print-freq', default=50, type=int,)
     parser.add_argument('--weight', default='None', type=str, help='pretrained weights for ininitialization')
     parser.add_argument('--overwrite', action='store_true', help='overwrite the output dir if already exists')
@@ -143,7 +143,7 @@ def main():
     args.warmup = int(args.warmup * args.epochs)
 
     print(args)
-    torch.set_printoptions(precision=4) 
+    torch.set_printoptions(precision=4)
 
     if args.debug:
         args.eval_freq = 1
@@ -151,18 +151,17 @@ def main():
     else:
         args.outf = os.path.join('output', args.outf)
 
-    if args.prune_ratio < 1 and not args.eval_only: 
+    if args.prune_ratio < 1 and not args.eval_only:
         prune_str = '_Prune{}_{}'.format(args.prune_ratio, ','.join([str(x) for x in args.prune_steps]))
     else:
         prune_str = ''
-    extra_str = '_Strd{}_{}Res{}{}'.format( ','.join([str(x) for x in args.strides]),  'Sin' if args.single_res else f'_lw{args.lw}_multi',  
+    extra_str = '_Strd{}_{}Res{}{}'.format( ','.join([str(x) for x in args.strides]),  'Sin' if args.single_res else f'_lw{args.lw}_multi',
             '_dist' if args.distributed else '', f'_eval' if args.eval_only else '')
     norm_str = '' if args.norm == 'none' else args.norm
 
     exp_id = f'{args.dataset}/embed{args.embed}_{args.stem_dim_num}_fc_{args.fc_hw_dim}__exp{args.expansion}_reduce{args.reduction}_low{args.lower_width}_blk{args.num_blocks}_cycle{args.cycles}' + \
             f'_gap{args.frame_gap}_e{args.epochs}_warm{args.warmup}_b{args.batchSize}_{args.conv_type}_lr{args.lr}_{args.lr_type}' + \
             f'_{args.loss_type}{norm_str}{extra_str}{prune_str}'
-    
     exp_id += f'_act{args.act}_{args.suffix}'
     args.exp_id = exp_id
 
@@ -198,6 +197,9 @@ def main():
     else:
         proj_name = args.dataset
 
+    # make exp dir
+    os.makedirs('./output/{}'.format(args.exp_name), exist_ok=True)
+
     wandb.init(project='NeRV_{}'.format(proj_name),
                entity='haeyong', name=exp_name, config=args)
 
@@ -205,6 +207,7 @@ def main():
         mp.spawn(train, nprocs=args.ngpus_per_node, args=(args,))
     else:
         train(None, args)
+
 
 def train(local_rank, args):
 
@@ -300,7 +303,7 @@ def train(local_rank, args):
         params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
 
         print(f'{args}\n {model}\n Model Params: {params}M')
-        with open('{}/rank0.txt'.format(args.outf), 'a') as f:
+        with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
             f.write(str(model) + '\n' + f'Params: {params}M\n')
     else:
         writer = None
@@ -409,8 +412,10 @@ def train(local_rank, args):
 
     print('*' * 50)
     consolidated_masks = None
+    sparsity = args.sparsity
     best_model = get_model(model)
     start = datetime.now()
+    
     for task_id, cla in taskcla:
         train_dataloader = train_dataloader_dict[task_id]
         val_dataloader = val_dataloader_dict[task_id]
@@ -490,7 +495,7 @@ def train(local_rank, args):
                         RoundTensor(train_psnr, 2, False), RoundTensor(train_msssim, 4, False))
                     print(print_str, flush=True)
                     if local_rank in [0, None]:
-                        with open('{}/rank0.txt'.format(args.outf), 'a') as f:
+                        with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
                             f.write(print_str + '\n')
 
             # collect numbers from other gpus
@@ -515,7 +520,7 @@ def train(local_rank, args):
 
                 print_str = 'Task_id:{},\t{}p: current: {:.2f}\t best: {:.2f}\t msssim_best: {:.4f}\t'.format(task_id, h, train_psnr[-1].item(), train_best_psnr.item(), train_best_msssim.item())
                 print(print_str, flush=True)
-                with open('{}/rank0.txt'.format(args.outf), 'a') as f:
+                with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
                     f.write(print_str + '\n')
                     epoch_end_time = datetime.now()
                     total_epoch_train_time += (epoch_end_time - epoch_start_time).total_seconds()
@@ -549,10 +554,20 @@ def train(local_rank, args):
                     print_str += '\t{}p: current: {:.2f}\tbest: {:.2f} \tbest_msssim: {:.4f}\t Time/epoch: {:.2f}'.format(h, val_psnr[-1].item(),
                                                                                                                       val_best_psnr.item(), val_best_msssim.item(), (val_end_time - val_start_time).total_seconds())
                     print(print_str)
-                    with open('{}/rank0.txt'.format(args.outf), 'a') as f:
+                    with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
                         f.write(print_str + '\n')
                     if is_val_best:
                         best_model = get_model(model)
+                    else:
+                        pass
+                        # ----------------------------------------------------------
+                        #sparsity -= 0.001
+                        #if sparsity < 0.05:
+                        #    sparsity = 0.05
+                        #model.apply(lambda m: setattr(m, "sparsity",sparsity))
+                        #print('*' * 40)
+                        #print('updated sparsity:{}'.format(sparsity))
+                        #print('*' * 40)
 
         # Restore the best model
         set_model(model,best_model)
@@ -576,8 +591,8 @@ def train(local_rank, args):
             'per_task_masks': per_task_masks,
             'consolidated_masks': consolidated_masks,
         }
-        os.makedirs('./output/{}'.format(args.exp_name), exist_ok=True)
         torch.save(save_checkpoint, './output/{}/model_task{}_val_best.pth'.format(args.exp_name, task_id))
+
 
         for task_jd, cla in taskcla:
             val_dataloader = val_dataloader_dict[task_jd]
@@ -600,14 +615,14 @@ def train(local_rank, args):
             for i_a in range(task_id+1):
                 print('\t',end='')
                 for j_a in range(args.n_tasks):
-                    print('{:5.1f} '.format(psnr_matrix[i_a, j_a]),end='')
+                    print('{:5.2f} '.format(psnr_matrix[i_a, j_a]),end='')
                 print()
 
             print('MSSIM =')
             for i_a in range(task_id+1):
                 print('\t',end='')
                 for j_a in range(args.n_tasks):
-                    print('{:5.1f} '.format(msssim_matrix[i_a, j_a]),end='')
+                    print('{:5.2f} '.format(msssim_matrix[i_a, j_a]),end='')
                 print()
 
         if local_rank in [0, None]:
@@ -694,7 +709,7 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
         print_str = f'Entropy encoding efficiency for bit {args.quant_bit}: {encoding_efficiency}'
         print(print_str)
         if local_rank in [0, None]:
-            with open('{}/eval.txt'.format(args.outf), 'a') as f:
+            with open('./output/{}/eval.txt'.format(args.exp_name), 'a') as f:
                 f.write(print_str + '\n')
         model.load_state_dict(cur_ckt)
 
@@ -702,7 +717,7 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
     msssim_list = []
     if args.dump_images:
         from torchvision.utils import save_image
-        visual_dir = f'{args.outf}/visualize'
+        visual_dir = f'./output/{args.exp_name}/visualize/{task_id}'
         print(f'Saving predictions to {visual_dir}')
         if not os.path.isdir(visual_dir):
             os.makedirs(visual_dir)
@@ -759,7 +774,7 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
                 RoundTensor(val_psnr, 2, False), RoundTensor(val_msssim, 4, False), round(fps, 2))
             print(print_str)
             if local_rank in [0, None]:
-                with open('{}/rank0.txt'.format(args.outf), 'a') as f:
+                with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
                     f.write(print_str + '\n')
     model.train()
 

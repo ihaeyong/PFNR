@@ -5,9 +5,9 @@ export CUDA_VISIBLE_DEVICES="$1"
 
 if [ $2 == 'train' ]; then
 
-    python train_nerv.py -e 300 \
+    python train_nerv.py -e 150 \
            --lower-width 96 --num-blocks 1 \
-           --dataset UVG17B --frame_gap 1 \
+           --dataset UVG8 --frame_gap 1 \
            --outf bunny_ab --embed 1.25_40 \
            --stem_dim_num 512_1 --reduction 2 \
            --fc_hw_dim 9_16_112 --expansion 1  \
@@ -17,9 +17,7 @@ if [ $2 == 'train' ]; then
            -b 1  --lr 0.0005 \
            --norm none --act swish \
            --subnet --sparsity $3 \
-           --exp_name CVRNet_epoch150_UVGB \
-           --epochs 150
-
+           --exp_name CVRNet_epoch150_FOR_EVAL
 
 
 elif [ $2 == 'eval' ]; then
@@ -34,5 +32,5 @@ elif [ $2 == 'eval' ]; then
            --conv_type conv \
            -b 1  --lr 0.0005 \
            --norm none  --act swish \
-           --weight checkpoints/nerv_S_val.pth --eval_only 
+           --weight checkpoints/nerv_S_val.pth --eval_only
 fi
