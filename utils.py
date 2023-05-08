@@ -273,6 +273,10 @@ def safe_save(save_path, data):
 def get_model(model):
     return deepcopy(model.state_dict())
 
-def set_model(model,state_dict):
+def set_model(model,state_dict, getback=False):
     model.load_state_dict(deepcopy(state_dict))
-    return
+
+    if getback:
+        return model
+    else:
+        return

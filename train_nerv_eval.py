@@ -27,11 +27,6 @@ import glob
 from copy import deepcopy
 import wandb
 
-from plots.confusion import conf_matrix, plot_acc_matrix
-
-path = os.path.join(os.path.dirname(__file__), os.pardir)
-sys.path.append(path)
-
 def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
 
     if task_id == 0:
@@ -66,7 +61,6 @@ def update_grad(model, consolidated_masks):
             # Zero-out gradients
             if getattr(module, attr) is not None:
                 getattr(module, attr).grad[consolidated_masks[key] == 1] = 0
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -390,19 +384,230 @@ def train(local_rank, args):
     psnr_matrix = np.zeros((args.n_tasks, args.n_tasks))
     msssim_matrix = np.zeros((args.n_tasks, args.n_tasks))
     taskcla = [(task_id, name.split('/')[-1])for task_id, name in enumerate(data_list)]
+    print(taskcla)
+
+    train_dataloader_dict = {}
+    val_dataloader_dict = {}
+    data_size_dict = {}
+    train_time_dict = {}
+    for task_id, cla in taskcla:
+        val_data_dir = data_list[task_id]
+        val_dataset = DataSet(val_data_dir, img_transforms, vid_list=args.vid, frame_gap=args.test_gap,  )
+        val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset) if args.distributed else None
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batchSize,  shuffle=False,
+                                                     num_workers=args.workers, pin_memory=True, sampler=val_sampler, drop_last=False, worker_init_fn=worker_init_fn)
+
+        val_dataloader_dict[task_id] = val_dataloader
+
+    print('*' * 50)
+    consolidated_masks = None
+    sparsity = args.sparsity
+    for task_id, cla in taskcla:
+
+        print(f'video:{cla}')
+
+        val_dataloader = val_dataloader_dict[task_id]
+        checkpoints=torch.load('./output/{}/model_task{}_val_best.pth'.format(args.exp_name, task_id))
+
+        assert task_id == checkpoints['task_id']
+        epoch = checkpoints['epoch']
+        train_time_dict = checkpoints['train_time']
+        state_dict = checkpoints['state_dict']
+        train_best_psnr = checkpoints['train_best_psnr']
+        train_best_msssim = checkpoints['train_best_msssim']
+        val_best_psnr = checkpoints['val_best_psnr']
+        val_best_msssim = checkpoints['val_best_msssim']
+        per_task_masks = checkpoints['per_task_masks']
+        consolidated_masks = checkpoints['consolidated_masks']
+
+        print(checkpoints['taskcla'])
+
+        model = set_model(model, state_dict, getback=True)
+
+        for task_jd, cla in taskcla:
+            val_dataloader = val_dataloader_dict[task_jd]
+
+            if task_jd == task_id:
+                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                                per_task_masks, task_id=task_id, task_jd=task_jd, mode='test')
+            elif task_jd < task_id:
+                val_psnr, val_msssim = psnr_matrix[task_id-1, task_jd], msssim_matrix[task_id-1, task_jd]
+            else:
+
+                if args.dump_images:
+                    if task_id + 1 < task_jd:
+                        continue
+
+                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                                per_task_masks, task_id=task_id, task_jd=task_jd, mode='test')
+
+            psnr_matrix[task_id, task_jd] = val_psnr.item()
+            msssim_matrix[task_id, task_jd] = val_msssim.item()
+
+            print('*' * 50)
+            print('task_id{}/jd:{}, psnr:{}, msssim:{}'.format(task_id, task_jd, val_psnr.item(), val_msssim.item()))
+            print('*' * 50)
+
+            print('PSNR =')
+            for i_a in range(task_id+1):
+                print('\t',end='')
+                for j_a in range(args.n_tasks):
+                    print('{:5.2f} '.format(psnr_matrix[i_a, j_a]),end='')
+                print()
+
+            print('MSSIM =')
+            for i_a in range(task_id+1):
+                print('\t',end='')
+                for j_a in range(args.n_tasks):
+                    print('{:5.2f} '.format(msssim_matrix[i_a, j_a]),end='')
+                print()
+
+        del state_dict
+
 
     print('*' * 50)
     print(taskcla)
 
-    psnr_matrix = safe_load('./output/{}/psnr'.format(args.exp_name)) 
-    msssim_matrix = safe_load('./output/{}/msssim'.format(args.exp_name))
+    if not args.dump_images:
 
-    plot_acc_matrix(array=psnr_matrix, method=name, dataset='cifar100_100')
+        safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
+        safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
 
+        # PSNR
+        print ('Diagonal Final Avg PSNR: {:5.2f}%'.format( np.mean([psnr_matrix[i,i] for i in range(len(taskcla))] )))
+        test_avg_psnr = np.mean(psnr_matrix[len(taskcla) - 1])
+        print ('Final Avg PSNR: {:5.2f}%'.format( np.mean(psnr_matrix[len(taskcla) - 1])))
 
+        bwt_psnr = np.mean((psnr_matrix[-1]-np.diag(psnr_matrix))[:-1])
+        print ('Backward transfer of psnr: {:5.2f}%'.format(bwt_psnr))
+
+        # MSSSIM
+        print ('Diagonal Final Avg MSSSIM: {:5.2f}%'.format( np.mean([msssim_matrix[i,i] for i in range(len(taskcla))] )))
+        test_avg_msssim = np.mean(msssim_matrix[len(taskcla) - 1])
+        print ('Final Avg msssim: {:5.2f}%'.format( np.mean(msssim_matrix[len(taskcla) - 1])))
+
+        bwt_msssim = np.mean((msssim_matrix[-1]-np.diag(msssim_matrix))[:-1])
+        print ('Backward transfer of msssim: {:5.2f}%'.format(bwt_msssim))
+
+        total_train_sec = 0
+        for key, value in train_time_dict.items():
+            total_train_sec += value
+
+        print('[Elapsed traing hours = {:.2f}h]'.format(total_train_sec / 3600))
+
+        log_dict = {
+            'test/avg_psnr': test_avg_psnr,
+            'test/bwt_psnr': bwt_psnr,
+            'test/avg_msssim': test_avg_msssim,
+            'text/bwt_msssim': bwt_msssim,
+            'test/train_hours': total_train_sec / 3600
+        }
+        print(log_dict)
+        print('-'*50)
+        print(taskcla)
+        print('-'*50)
+        print(args)
+
+@torch.no_grad()
+def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_id, task_jd, mode):
+    # Model Quantization
+    if args.quant_bit != -1:
+        cur_ckt = model.state_dict()
+        from dahuffman import HuffmanCodec
+        quant_weitht_list = []
+        for k,v in cur_ckt.items():
+            large_tf = (v.dim() in {2,4} and 'bias' not in k)
+            quant_v, new_v = quantize_per_tensor(v, args.quant_bit, args.quant_axis if large_tf else -1)
+            valid_quant_v = quant_v[v!=0] # only include non-zero weights
+            quant_weitht_list.append(valid_quant_v.flatten())
+            cur_ckt[k] = new_v
+        cat_param = torch.cat(quant_weitht_list)
+        input_code_list = cat_param.tolist()
+        unique, counts = np.unique(input_code_list, return_counts=True)
+        num_freq = dict(zip(unique, counts))
+
+        # generating HuffmanCoding table
+        codec = HuffmanCodec.from_data(input_code_list)
+        sym_bit_dict = {}
+        for k, v in codec.get_code_table().items():
+            sym_bit_dict[k] = v[0]
+        total_bits = 0
+        for num, freq in num_freq.items():
+            total_bits += freq * sym_bit_dict[num]
+        avg_bits = total_bits / len(input_code_list)
+
+        encoding_efficiency = avg_bits / args.quant_bit
+        print_str = f'Entropy encoding efficiency for bit {args.quant_bit}: {encoding_efficiency}'
+        print(print_str)
+        if local_rank in [0, None]:
+            with open('./output/{}/eval.txt'.format(args.exp_name), 'a') as f:
+                f.write(print_str + '\n')
+        model.load_state_dict(cur_ckt)
+
+    psnr_list = []
+    msssim_list = []
+    if args.dump_images:
+        from torchvision.utils import save_image
+        visual_dir = f'./output/{args.exp_name}/visualize/{task_id}/{task_jd}'
+        print(f'Saving predictions to {visual_dir}')
+        if not os.path.isdir(visual_dir):
+            os.makedirs(visual_dir)
+
+    time_list = []
+    model.eval()
+    for i, (data,  norm_idx) in enumerate(val_dataloader):
+        if i > 10 and args.debug:
+            break
+        embed_input = pe(norm_idx)
+        if True:
+            task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
+            embed_task = pe(task_idx)
+            embed_input = torch.cat([embed_input, embed_task], 1)
+
+        if local_rank is not None:
+            data = data.cuda(local_rank, non_blocking=True)
+            embed_input = embed_input.cuda(local_rank, non_blocking=True)
+        else:
+            data, embed_input = data.cuda(non_blocking=True), embed_input.cuda(non_blocking=True)
+
+        # compute psnr and msssim
+        fwd_num = 10 if args.eval_fps else 1
+        for _ in range(fwd_num):
+            start_time = datetime.now()
+            if args.subnet:
+                output_list = model(x=embed_input, task_id=task_id, mask=per_task_masks, mode=mode)
+            else:
+                output_list = model(embed_input)
+
+            torch.cuda.synchronize()
+            # torch.cuda.current_stream().synchronize()
+            time_list.append((datetime.now() - start_time).total_seconds())
+
+        # dump predictions
+        if args.dump_images:
+            for batch_ind in range(args.batchSize):
+                full_ind = i * args.batchSize + batch_ind
+                save_image(output_list[-1][batch_ind], f'{visual_dir}/pred_{full_ind}.png')
+                save_image(data[batch_ind], f'{visual_dir}/gt_{full_ind}.png')
+
+        # compute psnr and ms-ssim
+        target_list = [F.adaptive_avg_pool2d(data, x.shape[-2:]) for x in output_list]
+        psnr_list.append(psnr_fn(output_list, target_list))
+        msssim_list.append(msssim_fn(output_list, target_list))
+        val_psnr = torch.cat(psnr_list, dim=0)              #(batchsize, num_stage)
+        val_psnr = torch.mean(val_psnr, dim=0)              #(num_stage)
+        val_msssim = torch.cat(msssim_list, dim=0)          #(batchsize, num_stage)
+        val_msssim = torch.mean(val_msssim.float(), dim=0)  #(num_stage)
+        if i % args.print_freq == 0:
+            fps = fwd_num * (i+1) * args.batchSize / sum(time_list)
+            print_str = 'Rank:{}, Step [{}/{}], PSNR: {}, MSSSIM: {} FPS: {}'.format(
+                local_rank, i+1, len(val_dataloader),
+                RoundTensor(val_psnr, 2, False), RoundTensor(val_msssim, 4, False), round(fps, 2))
+            print(print_str)
+            if local_rank in [0, None]:
+                with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
+                    f.write(print_str + '\n')
+    return val_psnr, val_msssim
 
 if __name__ == '__main__':
     main()
-
-
-

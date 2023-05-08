@@ -156,22 +156,23 @@ def plot_acc_matrix(array=None, method='Barlow_Twin', dataset=None):
 
     # set task_list
     task_list = []
-    #label_list = [1, 5, 10, 15, 20, 25, 30, 35, 40]
+    label_list = [1, 5, 10, 15, 20, 25, 30, 35, 40]
     for i in range(n_tasks):
-        #if i+1 in label_list:
-        task_list.append('T{}'.format(str(i+1)))
-        #else:
-        #    task_list.append('')
+        if i+1 in label_list:
+            task_list.append('S{}'.format(str(i+1)))
+        else:
+            task_list.append('')
 
     # confusion matrix
     df_cm = pd.DataFrame(array, index = [i for i in range(n_tasks)],
                          columns = [i for i in range(n_tasks)])
 
-    sn.set(font_scale=1.3)
-    s=sn.heatmap(df_cm, annot=True, annot_kws={"size": 14},
-                 cbar=False, cbar_kws={"size", 14},
-                 #vmin=40, vmax=70,
-                 xticklabels=task_list, yticklabels=task_list, fmt='.1f')
+    sn.set(font_scale=1.5)
+    s=sn.heatmap(df_cm, annot=True, annot_kws={"size": 15},
+                 cbar=False, cbar_kws={"size", 15},
+                 #vmin=0, vmax=3000,
+                 #square=True,
+                 xticklabels=task_list, yticklabels=task_list, fmt='.2f')
 
     s.set_xticklabels(s.get_xticklabels(), rotation = 0, fontsize = 16)
     s.set_yticklabels(s.get_yticklabels(), rotation = 0, fontsize = 16)
@@ -189,7 +190,10 @@ def plot_acc_matrix(array=None, method='Barlow_Twin', dataset=None):
         os.makedirs(path)
         print("The new directory is created!: {}".format(path))
 
-    plt.savefig('./plots/{}/{}_{}.pdf'.format(dataset, dataset, method), format='pdf',dpi=600)
+    figure = plt.gcf()  # get current figure
+    figure.set_size_inches(14, 14)
+
+    plt.savefig('./plots/{}/{}_{}.pdf'.format(dataset, dataset, method), format='pdf',dpi=600, bbox_inches='tight')
     plt.close()
 
 

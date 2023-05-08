@@ -29,8 +29,8 @@ import wandb
 
 from plots.confusion import conf_matrix, plot_acc_matrix
 
-path = os.path.join(os.path.dirname(__file__), os.pardir)
-sys.path.append(path)
+#path = os.path.join(os.path.dirname(__file__), os.pardir)
+#sys.path.append(path)
 
 def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
 
@@ -394,12 +394,15 @@ def train(local_rank, args):
     print('*' * 50)
     print(taskcla)
 
-    psnr_matrix = safe_load('./output/{}/psnr'.format(args.exp_name)) 
-    msssim_matrix = safe_load('./output/{}/msssim'.format(args.exp_name))
+    psnr_matrix = safe_load('./output/{}/psnr.npy'.format(args.exp_name))
+    msssim_matrix = safe_load('./output/{}/msssim.npy'.format(args.exp_name))
 
-    plot_acc_matrix(array=psnr_matrix, method=name, dataset='cifar100_100')
+    exp_name = args.exp_name + '_psnr'
+    plot_acc_matrix(array=psnr_matrix, method=exp_name, dataset=args.dataset)
 
 
+    exp_name = args.exp_name + '_masssim'
+    plot_acc_matrix(array=msssim_matrix, method=exp_name, dataset=args.dataset)
 
 if __name__ == '__main__':
     main()
