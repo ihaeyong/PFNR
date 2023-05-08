@@ -470,8 +470,13 @@ def train(local_rank, args):
 
     if not args.dump_images:
 
-        safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
-        safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
+        if args.quant_bit != -1:
+            safe_save('./output/{}/psnr_quant{}'.format(args.exp_name, args.quant_bit), psnr_matrix)
+            safe_save('./output/{}/msssim_quant{}'.format(args.exp_name, args.quant_bit), msssim_matrix)
+
+        else:
+            safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
+            safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
 
         # PSNR
         print ('Diagonal Final Avg PSNR: {:5.2f}%'.format( np.mean([psnr_matrix[i,i] for i in range(len(taskcla))] )))
@@ -548,7 +553,7 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
     msssim_list = []
     if args.dump_images:
         from torchvision.utils import save_image
-        visual_dir = f'./output/{args.exp_name}/visualize/{task_id}/{task_jd}'
+        visual_dir = f'./output/{args.exp_name}/visualize_{args.quant_bit}/{task_id}/{task_jd}'
         print(f'Saving predictions to {visual_dir}')
         if not os.path.isdir(visual_dir):
             os.makedirs(visual_dir)
