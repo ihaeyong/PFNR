@@ -427,17 +427,18 @@ def train(local_rank, args):
         for task_jd, cla in taskcla:
             val_dataloader = val_dataloader_dict[task_jd]
 
+            if args.dump_images:
+                if task_id + 1 < args.n_tasks:
+                    continue
+
             if task_jd == task_id:
                 val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
                                                 per_task_masks, task_id=task_id, task_jd=task_jd, mode='test')
             elif task_jd < task_id:
-                val_psnr, val_msssim = psnr_matrix[task_id-1, task_jd], msssim_matrix[task_id-1, task_jd]
+                #val_psnr, val_msssim = psnr_matrix[task_id-1, task_jd], msssim_matrix[task_id-1, task_jd]
+                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                                per_task_masks, task_id=task_jd, task_jd=task_jd, mode='test')
             else:
-
-                if args.dump_images:
-                    if task_id + 1 < task_jd:
-                        continue
-
                 val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
                                                 per_task_masks, task_id=task_id, task_jd=task_jd, mode='test')
 

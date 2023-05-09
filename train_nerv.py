@@ -415,7 +415,7 @@ def train(local_rank, args):
     sparsity = args.sparsity
     best_model = get_model(model)
     start = datetime.now()
-    
+
     for task_id, cla in taskcla:
         train_dataloader = train_dataloader_dict[task_id]
         val_dataloader = val_dataloader_dict[task_id]
@@ -560,14 +560,6 @@ def train(local_rank, args):
                         best_model = get_model(model)
                     else:
                         pass
-                        # ----------------------------------------------------------
-                        #sparsity -= 0.001
-                        #if sparsity < 0.05:
-                        #    sparsity = 0.05
-                        #model.apply(lambda m: setattr(m, "sparsity",sparsity))
-                        #print('*' * 40)
-                        #print('updated sparsity:{}'.format(sparsity))
-                        #print('*' * 40)
 
         # Restore the best model
         set_model(model,best_model)
