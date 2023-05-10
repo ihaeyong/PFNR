@@ -190,6 +190,8 @@ def main():
         exp_name += '_bias'
 
     exp_name += '_fc' + str(args.fc_hw_dim)
+    exp_name += '_' + str(args.loss_type)
+
     args.exp_name = exp_name
 
     if 'UVG17' in args.dataset:
@@ -432,6 +434,10 @@ def train(local_rank, args):
         total_epochs = args.epochs * args.cycles
         total_epoch_train_time = 0
 
+        if False:
+            sparsity -= 0.01 * task_id
+            model.apply(lambda m: setattr(m, "sparsity",sparsity))
+
         for epoch in range(args.start_epoch, total_epochs):
             model.train()
             ##### prune the network if needed #####
@@ -589,12 +595,21 @@ def train(local_rank, args):
         for task_jd, cla in taskcla:
             val_dataloader = val_dataloader_dict[task_jd]
 
-            if task_jd <= task_id:
-                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
-                                                per_task_masks, task_jd, mode='test')
-            else:
+            if task_jd == task_id:
                 val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
                                                 per_task_masks, task_id, mode='test')
+            elif task_jd < task_id:
+                if True:
+                    val_psnr, val_msssim = psnr_matrix[task_id-1, task_jd], msssim_matrix[task_id-1, task_jd]
+                else:
+                    val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                                    per_task_masks, task_jd, mode='test')
+            else:
+                if True:
+                    val_psnr, val_msssim = torch.tensor(0), torch.tensor(0)
+                else:
+                    val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                                    per_task_masks, task_id, mode='test')
 
             psnr_matrix[task_id, task_jd] = val_psnr.item()
             msssim_matrix[task_id, task_jd] = val_msssim.item()
