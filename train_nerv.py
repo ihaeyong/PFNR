@@ -652,19 +652,19 @@ def train(local_rank, args):
             print('task_id{}/jd:{}, psnr:{}, msssim:{}'.format(task_id, task_jd, val_psnr.item(), val_msssim.item()))
             print('*' * 50)
 
-            print('PSNR =')
-            for i_a in range(task_id+1):
-                print('\t',end='')
-                for j_a in range(args.n_tasks):
-                    print('{:5.2f} '.format(psnr_matrix[i_a, j_a]),end='')
-                print()
+        print('PSNR =')
+        for i_a in range(task_id+1):
+            print('\t',end='')
+            for j_a in range(args.n_tasks):
+                print('{:5.2f} '.format(psnr_matrix[i_a, j_a]),end='')
+            print()
 
-            print('MSSIM =')
-            for i_a in range(task_id+1):
-                print('\t',end='')
-                for j_a in range(args.n_tasks):
-                    print('{:5.2f} '.format(msssim_matrix[i_a, j_a]),end='')
-                print()
+        print('MSSIM =')
+        for i_a in range(task_id+1):
+            print('\t',end='')
+            for j_a in range(args.n_tasks):
+                print('{:5.2f} '.format(msssim_matrix[i_a, j_a]),end='')
+            print()
 
         if local_rank in [0, None]:
             # state_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
