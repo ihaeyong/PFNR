@@ -27,6 +27,23 @@ import glob
 from copy import deepcopy
 import wandb
 
+def get_task_sparsity(task_id, per_task_masks, g_sparsity=False):
+    curr_task_sparsity = {}
+    if g_sparsity:
+        curr_task_masks = per_task_masks
+    else:
+        curr_task_masks = per_task_masks[task_id]
+
+    for key, value in curr_task_masks.items():
+        if 'last' in key:
+            continue
+
+        if value is not None:
+            curr_task_sparsity[key] = value.sum() / value.numel()
+
+    return curr_task_sparsity
+
+
 def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
 
     if task_id == 0:
@@ -134,6 +151,7 @@ def main():
 
     parser.add_argument('--n_tasks', type=int, default=7, help='number of tasks')
     parser.add_argument('--subnet', action='store_true', default=False, help='subnet')
+    parser.add_argument('--reinit', action='store_true', default=False, help='reinit')
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
 
@@ -191,6 +209,9 @@ def main():
 
     exp_name += '_fc' + str(args.fc_hw_dim)
     exp_name += '_' + str(args.loss_type)
+
+    if args.reinit:
+        exp_name += '_reinit'
 
     args.exp_name = exp_name
 
@@ -438,6 +459,9 @@ def train(local_rank, args):
             sparsity -= 0.01 * task_id
             model.apply(lambda m: setattr(m, "sparsity",sparsity))
 
+        if args.reinit:
+            model.reinit_masks()
+
         for epoch in range(args.start_epoch, total_epochs):
             model.train()
             ##### prune the network if needed #####
@@ -523,6 +547,16 @@ def train(local_rank, args):
                           f'Train/best_MSSSIM_{h}X{w}_gap{args.frame_gap}': train_best_msssim,
                           'Train/lr': lr}
                 wandb.log(log_dict)
+
+                if consolidated_masks is not None:
+                    g_sparsity = get_task_sparsity(task_id, consolidated_masks, True)
+                    log_dict = {'sparsity/epoch': epoch + 1,
+                                'sparsity/task_id': task_id}
+                    for key, value in g_sparsity.items():
+                        if value is not None:
+                            log_dict['sparsity/' + key] = value
+
+                    wandb.log(log_dict)
 
                 print_str = 'Task_id:{},\t{}p: current: {:.2f}\t best: {:.2f}\t msssim_best: {:.4f}\t'.format(task_id, h, train_psnr[-1].item(), train_best_psnr.item(), train_best_msssim.item())
                 print(print_str, flush=True)

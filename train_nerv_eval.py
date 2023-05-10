@@ -27,6 +27,74 @@ import glob
 from copy import deepcopy
 import wandb
 
+
+def get_task_sparsity(task_id, per_task_masks, g_sparsity=False):
+    curr_task_sparsity = {}
+    if g_sparsity:
+        curr_task_masks = per_task_masks
+    else:
+        curr_task_masks = per_task_masks[task_id]
+
+    for key, value in curr_task_masks.items():
+        if 'last' in key:
+            continue
+
+        if value is not None:
+            curr_task_sparsity[key] = value.sum() / value.numel()
+
+    return curr_task_sparsity
+
+
+def get_reused_sparsity(task_id, per_task_masks, consolidated_masks):
+    curr_reused_sparsity = {}
+
+    if task_id > 0:
+        prev_task_masks = per_task_masks[task_id-1]
+    else:
+        prev_task_masks = per_task_masks[task_id]
+
+    curr_task_masks = per_task_masks[task_id]
+
+    for key, value in curr_task_masks.items():
+        if 'last' in key:
+            continue
+
+        prev_value = prev_task_masks[key]
+        if prev_value is not None:
+            value = prev_value * value
+
+        if value is not None:
+            curr_reused_sparsity[key] = value.sum() / value.numel()
+
+    return curr_reused_sparsity
+
+def get_coused_sparsity(task_id, per_task_masks, consolidated_masks):
+
+    curr_coused_sparsity = {}
+    curr_coused_mask = per_task_masks[task_id]
+
+    if task_id == 0:
+        task_id = 1
+
+    for tid in range(task_id):
+        prev_task_masks = per_task_masks[tid]
+
+        for key, value in prev_task_masks.items():
+            if 'last' in key:
+                continue
+
+            con_value = curr_coused_mask[key]
+            if con_value is not None:
+                value = con_value * value
+                curr_coused_mask[key] = value
+
+            if value is not None:
+                curr_coused_sparsity[key] = value.sum() / value.numel()
+
+    return curr_coused_sparsity
+
+
+
 def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
 
     if task_id == 0:
@@ -401,6 +469,9 @@ def train(local_rank, args):
 
     print('*' * 50)
     consolidated_masks = None
+    global_sparsity = {}
+    reused_sparsity = {}
+    coused_sparsity = {}
     sparsity = args.sparsity
     for task_id, cla in taskcla:
 
@@ -419,6 +490,27 @@ def train(local_rank, args):
         val_best_msssim = checkpoints['val_best_msssim']
         per_task_masks = checkpoints['per_task_masks']
         consolidated_masks = checkpoints['consolidated_masks']
+
+        # sparsity
+        global_sparsity[task_id] = {}
+        reused_sparsity[task_id] = {}
+        task_sparsity = get_task_sparsity(task_id, consolidated_masks, g_sparsity=True)
+        reused_sparsity = get_reused_sparsity(task_id, per_task_masks, consolidated_masks)
+        coused_sparsity = get_coused_sparsity(task_id, per_task_masks, consolidated_masks)
+
+        print('*' * 50)
+        for key, value in task_sparsity.items():
+            if value is not None:
+                re_value = reused_sparsity[key]
+                cre_value = coused_sparsity[key]
+                print('task_id{} sparsity : {}, c{}, reused c{}, coused c{}'.format(task_id,
+                                                                                    key,
+                                                                                    value,
+                                                                                    re_value, cre_value))
+                global_sparsity[task_id][key]=value
+        print('*' * 50)
+
+        continue
 
         print(checkpoints['taskcla'])
 
@@ -478,6 +570,11 @@ def train(local_rank, args):
         else:
             safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
             safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
+
+
+        safe_save('./output/{}/global_sparsity'.format(args.exp_name), global_sparsity)
+        safe_save('./output/{}/reused_sparsity'.format(args.exp_name), reused_sparsity)
+        safe_save('./output/{}/coused_sparsity'.format(args.exp_name), coused_sparsity)
 
         # PSNR
         print ('Diagonal Final Avg PSNR: {:5.2f}%'.format( np.mean([psnr_matrix[i,i] for i in range(len(taskcla))] )))

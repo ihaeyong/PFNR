@@ -16,8 +16,8 @@ if [ $2 == 'train' ]; then
            --conv_type conv \
            -b 1  --lr 0.0005 \
            --norm none --act swish \
-           --subnet --sparsity $3 \
-           --exp_name CVRNet_epoch150
+           --subnet --sparsity $3 --reinit \
+           --exp_name CVRNet_epoch150_increase0.01
 
 elif [ $2 == 'eval' ]; then
 
@@ -33,7 +33,7 @@ elif [ $2 == 'eval' ]; then
                -b 1  --lr 0.0005 \
                --norm none --act swish \
                --subnet --sparsity $3 \
-               --quant_bit $4 --dump_images \
+               --quant_bit $4 \
                --exp_name CVRNet_epoch150_UVGB
 
 elif [ $2 == 'plot' ]; then

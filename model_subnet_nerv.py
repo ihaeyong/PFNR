@@ -365,6 +365,18 @@ class SubnetGeneratorMH(nn.Module):
         return task_mask
 
 
+    def reinit_masks(self):
+
+        for name, module in self.named_modules():
+            if 'head_layers' in name:
+                continue
+
+            # For the time being we only care about the current task outputhead
+            if isinstance(module, SubnetLinear) or isinstance(module, SubnetConv2d):
+                module.init_mask_parameters()
+        return
+
+
     def forward(self, x, task_id=None, mask=None, mode="train"):
 
         if mode == 'test':
