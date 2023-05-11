@@ -494,20 +494,20 @@ def train(local_rank, args):
         # sparsity
         global_sparsity[task_id] = {}
         reused_sparsity[task_id] = {}
-        task_sparsity = get_task_sparsity(task_id, consolidated_masks, g_sparsity=True)
-        reused_sparsity = get_reused_sparsity(task_id, per_task_masks, consolidated_masks)
-        coused_sparsity = get_coused_sparsity(task_id, per_task_masks, consolidated_masks)
+        coused_sparsity[task_id] = {}
+        global_sparsity[task_id] = get_task_sparsity(task_id, consolidated_masks, g_sparsity=True)
+        reused_sparsity[task_id] = get_reused_sparsity(task_id, per_task_masks, consolidated_masks)
+        coused_sparsity[task_id] = get_coused_sparsity(task_id, per_task_masks, consolidated_masks)
 
         print('*' * 50)
-        for key, value in task_sparsity.items():
+        for key, value in global_sparsity[task_id].items():
             if value is not None:
-                re_value = reused_sparsity[key]
-                cre_value = coused_sparsity[key]
+                re_value = reused_sparsity[task_id][key]
+                cre_value = coused_sparsity[task_id][key]
                 print('task_id{} sparsity : {}, c{}, reused c{}, coused c{}'.format(task_id,
                                                                                     key,
                                                                                     value,
                                                                                     re_value, cre_value))
-                global_sparsity[task_id][key]=value
         print('*' * 50)
 
         continue

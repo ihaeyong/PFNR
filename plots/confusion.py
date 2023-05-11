@@ -196,4 +196,111 @@ def plot_acc_matrix(array=None, method='Barlow_Twin', dataset=None):
     plt.savefig('./plots/{}/{}_{}.pdf'.format(dataset, dataset, method), format='pdf',dpi=600, bbox_inches='tight')
     plt.close()
 
+def plot_psnr(ExNIR, dataset=None):
+
+    fig, ax = plt.subplots()
+
+    STL = [
+        39.66 , 44.91 , 36.28 , 41.13 , 38.14 , 31.50 , 42.03 ,
+        34.76 , 36.59 , 36.85 , 29.23 , 31.79 , 37.27 , 34.15 ,
+        31.45 , 38.44 , 43.84
+    ]
+
+    ExNIR = [
+        31.50, 34.37, 31.00, 32.38, 29.26, 23.08, 31.96, 22.64,
+        22.07, 33.48, 18.34, 20.45, 27.21, 24.33, 23.09, 21.23,
+        29.13]
+
+    # STL
+    plt.plot(STL, '-o', lw=1, color='r', label='STL, NeRV')
+
+    # ExNIR
+    plt.plot(ExNIR, '-o', lw=1, color='c', label='ExNIR (ours)')
+
+    x = np.arange(0, len(ExNIR),1)
+    x_label = []
+    for i in x:
+        x_label.append(str(i+1))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(x_label, rotation=0)
+    ax.set_yticks(np.arange(15, 60, 5))
+
+    plt.legend(fontsize=16, loc='upper left')
+    figure = plt.gcf()  # get current figure
+    figure.set_size_inches(14, 6)
+
+    plt.ylabel('PSNR', fontsize=20)
+    plt.xlabel('Sessions', fontsize=20)
+
+    plt.savefig('./plots/{}/{}_psnr_{}.pdf'.format(dataset, dataset, dataset), format='pdf',dpi=600, bbox_inches='tight')
+    plt.close()
+
+def plot_capacity(global_s, reused_s, comm_s, dataset=None):
+
+    color = {
+        '0.102': '#1f77b4',
+        #'0.3': 'c',
+        '0.5': '#ff7f0e',
+        #'0.7': 'y',
+        '0.9': '#2ca02c'
+    }
+
+    l_type = {
+        'stem.mlp_fc1.weight': 'o-',
+        #'stem.mlp_fc2.weight': '>-',
+        'layers.1.conv.conv.weight': 'v-',
+        #'layers.2.conv.conv.weight': '<-',
+        #'layers.3.conv.conv.weight': '*-',
+        'layers.4.conv.conv.weight': 's-',
+    }
+
+    fig, ax = plt.subplots()
+
+
+    for key in global_s[0].keys():
+
+
+        if key not in l_type:
+            continue
+
+        g_list = []
+        r_list = []
+        c_list = []
+        for task_id in global_s.keys():
+
+            global_v = global_s[task_id][key].item() * 100.0
+            reused_v = reused_s[task_id][key].item() * 100.0
+            common_v = comm_s[task_id][key].item() * 100.0
+
+            g_list.append(global_v)
+            r_list.append(reused_v)
+            c_list.append(common_v)
+
+            print(f'task_idx{task_id}, {key}: g{global_v}, r{reused_v}, c{common_v}')
+
+        plt.plot(g_list, l_type[key], lw=1, color='c', label=key)
+        plt.plot(r_list, l_type[key], lw=1, color='g')
+
+
+    x = np.arange(0, len(g_list),1)
+    x_label = []
+    for i in x:
+        x_label.append(str(i+1))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(x_label, rotation=0)
+    ax.set_yticks(np.arange(15, 80, 5))
+
+    plt.legend(fontsize=16, loc='upper left')
+    figure = plt.gcf()  # get current figure
+    figure.set_size_inches(14, 6)
+
+    plt.ylabel('Capacity(%)', fontsize=20)
+    plt.xlabel('Sessions', fontsize=20)
+
+    plt.savefig('./plots/{}/{}_capacity_{}.pdf'.format(dataset, dataset, dataset), format='pdf',dpi=600, bbox_inches='tight')
+    plt.close()
+
+
 

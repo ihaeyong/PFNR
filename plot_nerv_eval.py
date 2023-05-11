@@ -27,7 +27,7 @@ import glob
 from copy import deepcopy
 import wandb
 
-from plots.confusion import conf_matrix, plot_acc_matrix
+from plots.confusion import conf_matrix, plot_acc_matrix, plot_capacity, plot_psnr
 
 #path = os.path.join(os.path.dirname(__file__), os.pardir)
 #sys.path.append(path)
@@ -397,12 +397,25 @@ def train(local_rank, args):
     psnr_matrix = safe_load('./output/{}/psnr.npy'.format(args.exp_name))
     msssim_matrix = safe_load('./output/{}/msssim.npy'.format(args.exp_name))
 
+    # plots
+    ExNIR = psnr_matrix[-1]
+    plot_psnr(ExNIR, dataset=args.dataset)
+
+    com_used_sparsity = safe_load('./output/{}/coused_sparsity.npy'.format(args.exp_name), True)
+    global_sparsity = safe_load('./output/{}/global_sparsity.npy'.format(args.exp_name), True)
+    reused_sparsity = safe_load('./output/{}/reused_sparsity.npy'.format(args.exp_name), True)
+
+
     exp_name = args.exp_name + '_psnr'
     plot_acc_matrix(array=psnr_matrix, method=exp_name, dataset=args.dataset)
 
 
     exp_name = args.exp_name + '_masssim'
     plot_acc_matrix(array=msssim_matrix, method=exp_name, dataset=args.dataset)
+
+
+    # plot capacity
+    plot_capacity(global_sparsity, reused_sparsity, com_used_sparsity, dataset=args.dataset)
 
 if __name__ == '__main__':
     main()
