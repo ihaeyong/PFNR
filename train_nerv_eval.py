@@ -35,14 +35,16 @@ def get_task_sparsity(task_id, per_task_masks, g_sparsity=False):
     else:
         curr_task_masks = per_task_masks[task_id]
 
+    cum_sparsity = 0
     for key, value in curr_task_masks.items():
         if 'last' in key:
             continue
 
         if value is not None:
             curr_task_sparsity[key] = value.sum() / value.numel()
+            cum_sparsity += value.sum()
 
-    return curr_task_sparsity
+    return curr_task_sparsity, cum_sparsity
 
 
 def get_reused_sparsity(task_id, per_task_masks, consolidated_masks):
@@ -64,6 +66,9 @@ def get_reused_sparsity(task_id, per_task_masks, consolidated_masks):
             value = prev_value * value
 
         if value is not None:
+            #if task_id == 0:
+            #    curr_reused_sparsity[key] = torch.tensor(0.0)
+            #else:
             curr_reused_sparsity[key] = value.sum() / value.numel()
 
     return curr_reused_sparsity
@@ -89,6 +94,9 @@ def get_coused_sparsity(task_id, per_task_masks, consolidated_masks):
                 curr_coused_mask[key] = value
 
             if value is not None:
+                #if task_id == 0:
+                #    curr_reused_sparsity[key] = torch.tensor(0.0)
+                #else:
                 curr_coused_sparsity[key] = value.sum() / value.numel()
 
     return curr_coused_sparsity
@@ -202,6 +210,7 @@ def main():
 
     parser.add_argument('--n_tasks', type=int, default=7, help='number of tasks')
     parser.add_argument('--subnet', action='store_true', default=False, help='subnet')
+    parser.add_argument('--reinit', action='store_true', default=False, help='reinit')
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
 
@@ -258,6 +267,11 @@ def main():
         exp_name += '_bias'
 
     exp_name += '_fc' + str(args.fc_hw_dim)
+    exp_name += '_' + str(args.loss_type)
+
+    if args.reinit:
+        exp_name += '_reinit'
+
     args.exp_name = exp_name
 
     if 'UVG17' in args.dataset:
@@ -368,7 +382,18 @@ def train(local_rank, args):
     ##### get model params and flops #####
     total_params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
     if local_rank in [0, None]:
-        params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
+
+        if False:
+            params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
+        else:
+
+            params = 0
+            for n, p in model.named_parameters():
+                if 'w_m' in n:
+                    continue
+                params+=p.data.nelement()
+
+            params = params / 1e6
 
         print(f'{args}\n {model}\n Model Params: {params}M')
         with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
@@ -471,8 +496,10 @@ def train(local_rank, args):
     consolidated_masks = None
     global_sparsity = {}
     reused_sparsity = {}
+    used_sparsity = {}
     coused_sparsity = {}
     sparsity = args.sparsity
+
     for task_id, cla in taskcla:
 
         print(f'video:{cla}')
@@ -492,27 +519,40 @@ def train(local_rank, args):
         consolidated_masks = checkpoints['consolidated_masks']
 
         # sparsity
-        global_sparsity[task_id] = {}
-        reused_sparsity[task_id] = {}
-        coused_sparsity[task_id] = {}
-        global_sparsity[task_id] = get_task_sparsity(task_id, consolidated_masks, g_sparsity=True)
-        reused_sparsity[task_id] = get_reused_sparsity(task_id, per_task_masks, consolidated_masks)
-        coused_sparsity[task_id] = get_coused_sparsity(task_id, per_task_masks, consolidated_masks)
+        if False:
+            global_sparsity[task_id] = {}
+            reused_sparsity[task_id] = {}
+            coused_sparsity[task_id] = {}
+            used_sparsity[task_id] = {}
+            global_sparsity[task_id], used_sparsity[task_id] = get_task_sparsity(task_id, consolidated_masks, g_sparsity=True)
+            reused_sparsity[task_id] = get_reused_sparsity(task_id, per_task_masks, consolidated_masks)
+            coused_sparsity[task_id] = get_coused_sparsity(task_id, per_task_masks, consolidated_masks)
 
-        print('*' * 50)
-        for key, value in global_sparsity[task_id].items():
-            if value is not None:
-                re_value = reused_sparsity[task_id][key]
-                cre_value = coused_sparsity[task_id][key]
-                print('task_id{} sparsity : {}, c{}, reused c{}, coused c{}'.format(task_id,
-                                                                                    key,
-                                                                                    value,
-                                                                                    re_value, cre_value))
-        print('*' * 50)
+            print('*' * 50)
+            for key, value in global_sparsity[task_id].items():
+                if value is not None:
+                    re_value = reused_sparsity[task_id][key]
+                    cre_value = coused_sparsity[task_id][key]
+                    print('task_id{} sparsity : {}, c{}, reused c{}, coused c{}'.format(task_id,
+                                                                                        key,
+                                                                                        value,
+                                                                                        re_value, cre_value))
 
-        continue
+            print(checkpoints['taskcla'])
 
-        print(checkpoints['taskcla'])
+            head_params = model.head_layers[0].weight.data.nelement() * (task_id + 1)
+            used_sparsity[task_id] = (used_sparsity[task_id] + head_params) / (params * 1e6)
+
+            print('task_id{}, used_sparsity: {}:'.format(task_id, used_sparsity[task_id]))
+
+            print('*' * 50)
+
+            safe_save('./output/{}/global_sparsity'.format(args.exp_name), global_sparsity)
+            safe_save('./output/{}/reused_sparsity'.format(args.exp_name), reused_sparsity)
+            safe_save('./output/{}/used_sparsity'.format(args.exp_name), used_sparsity)
+            safe_save('./output/{}/coused_sparsity'.format(args.exp_name), coused_sparsity)
+
+            continue
 
         model = set_model(model, state_dict, getback=True)
 
@@ -571,10 +611,6 @@ def train(local_rank, args):
             safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
             safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
 
-
-        safe_save('./output/{}/global_sparsity'.format(args.exp_name), global_sparsity)
-        safe_save('./output/{}/reused_sparsity'.format(args.exp_name), reused_sparsity)
-        safe_save('./output/{}/coused_sparsity'.format(args.exp_name), coused_sparsity)
 
         # PSNR
         print ('Diagonal Final Avg PSNR: {:5.2f}%'.format( np.mean([psnr_matrix[i,i] for i in range(len(taskcla))] )))

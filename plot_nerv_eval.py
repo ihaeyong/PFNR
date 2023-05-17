@@ -27,7 +27,7 @@ import glob
 from copy import deepcopy
 import wandb
 
-from plots.confusion import conf_matrix, plot_acc_matrix, plot_capacity, plot_psnr
+from plots.confusion import conf_matrix, plot_acc_matrix, plot_capacity, plot_psnr, plot_psnr_bpp, plot_psnr_bit
 
 #path = os.path.join(os.path.dirname(__file__), os.pardir)
 #sys.path.append(path)
@@ -140,6 +140,7 @@ def main():
 
     parser.add_argument('--n_tasks', type=int, default=7, help='number of tasks')
     parser.add_argument('--subnet', action='store_true', default=False, help='subnet')
+    parser.add_argument('--reinit', action='store_true', default=False, help='reinit')
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
 
@@ -196,6 +197,11 @@ def main():
         exp_name += '_bias'
 
     exp_name += '_fc' + str(args.fc_hw_dim)
+    exp_name += '_' + str(args.loss_type)
+
+    if args.reinit:
+        exp_name += '_reinit'
+
     args.exp_name = exp_name
 
     if 'UVG17' in args.dataset:
@@ -394,8 +400,8 @@ def train(local_rank, args):
     print('*' * 50)
     print(taskcla)
 
-    psnr_matrix = safe_load('./output/{}/psnr.npy'.format(args.exp_name))
-    msssim_matrix = safe_load('./output/{}/msssim.npy'.format(args.exp_name))
+    psnr_matrix = safe_load('./output/{}/psnr_quant{}.npy'.format(args.exp_name, args.quant_bit))
+    msssim_matrix = safe_load('./output/{}/msssim_quant{}.npy'.format(args.exp_name, args.quant_bit))
 
     # plots
     ExNIR = psnr_matrix[-1]
@@ -406,16 +412,25 @@ def train(local_rank, args):
     reused_sparsity = safe_load('./output/{}/reused_sparsity.npy'.format(args.exp_name), True)
 
 
+    com_used_init_sparsity = safe_load('./output/{}/coused_sparsity_init.npy'.format(args.exp_name), True)
+    global_init_sparsity = safe_load('./output/{}/global_sparsity_init.npy'.format(args.exp_name), True)
+    reused_init_sparsity = safe_load('./output/{}/reused_sparsity_init.npy'.format(args.exp_name), True)
+
     exp_name = args.exp_name + '_psnr'
     plot_acc_matrix(array=psnr_matrix, method=exp_name, dataset=args.dataset)
-
 
     exp_name = args.exp_name + '_masssim'
     plot_acc_matrix(array=msssim_matrix, method=exp_name, dataset=args.dataset)
 
-
     # plot capacity
-    plot_capacity(global_sparsity, reused_sparsity, com_used_sparsity, dataset=args.dataset)
+    plot_capacity(global_sparsity, reused_sparsity, com_used_sparsity,
+                  global_init_sparsity, reused_init_sparsity, com_used_init_sparsity,
+                  dataset=args.dataset)
+
+    # plot psnr_bpp
+    plot_psnr_bpp(dataset=args.dataset)
+
+    plot_psnr_bit(dataset=args.dataset)
 
 if __name__ == '__main__':
     main()
