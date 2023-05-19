@@ -227,24 +227,24 @@ def plot_psnr_bit(dataset=None):
 
 
     MTL_x = [
-
+        0.118, 0.177, 0.295, 0.5913
     ]
 
     MTL_y = [
-
+        22.74, 23.12, 29.39, 29.42
     ]
 
     # STL
     plt.plot(STL_x, STL_y, '-o', lw=1, color='b', label='STL, NeRV')
 
     # ExNIR
-    plt.plot(ExNIR_x, ExNIR_y, marker='o', lw=1, color='c', label='ExNIR (ours)', linestyle='dashed')
+    plt.plot(ExNIR_x, ExNIR_y, marker='o', lw=1, color='c', label='PNR (ours)', linestyle='dashed')
 
     # ExNIR_reinit
-    plt.plot(ExNIR_reinit_x, ExNIR_reinit_y, marker='o', lw=1, color='r', label='ExNIR-reinit (ours)', linestyle='solid')
+    plt.plot(ExNIR_reinit_x, ExNIR_reinit_y, marker='o', lw=1, color='r', label='PNR-reinit (ours)', linestyle='solid')
 
     # MLT
-    #plt.plot(MTL_x, MTL_y, '-o', lw=1, color='m', label='MTL')
+    plt.plot(MTL_x, MTL_y, '-o', lw=1, marker='o', color='m', label='MTL', linestyle='solid')
 
 
     ax.set_yticks(np.arange(0, 50, 5))
@@ -275,10 +275,10 @@ def plot_psnr_bpp(dataset=None):
     #plt.plot(x, ExNIR_reinit_c10, marker='o', lw=1, color='c', label='ExNIR (ours)', linestyle='dashed')
 
     # ExNIR_reinit
-    plt.plot(x, ExNIR_reinit_c10, marker='o', lw=1, color='r', label='ExNIR-reinit, c=10.0%', linestyle='solid')
-    plt.plot(x, ExNIR_reinit_c30, marker='o', lw=1, color='c', label='ExNIR-reinit, c=30.0%', linestyle='solid')
-    plt.plot(x, ExNIR_reinit_c50, marker='o', lw=1, color='b', label='ExNIR-reinit, c=50.0% ', linestyle='solid')
-    plt.plot(x, ExNIR_reinit_c70, marker='o', lw=1, color='m', label='ExNIR-reinit, c=70.0% ', linestyle='solid')
+    plt.plot(x, ExNIR_reinit_c10, marker='o', lw=1, color='r', label='PNR-reinit, c=10.0%', linestyle='solid')
+    plt.plot(x, ExNIR_reinit_c30, marker='o', lw=1, color='c', label='PNR-reinit, c=30.0%', linestyle='solid')
+    plt.plot(x, ExNIR_reinit_c50, marker='o', lw=1, color='b', label='PNR-reinit, c=50.0% ', linestyle='solid')
+    plt.plot(x, ExNIR_reinit_c70, marker='o', lw=1, color='m', label='PNR-reinit, c=70.0% ', linestyle='solid')
 
 
     #x = np.arange(0, len(x),1)
@@ -334,10 +334,10 @@ def plot_psnr(ExNIR, dataset=None):
     plt.plot(STL, '-o', lw=1, color='b', label='STL, NeRV')
 
     # ExNIR
-    plt.plot(ExNIR, marker='o', lw=1, color='c', label='ExNIR (ours)', linestyle='dashed')
+    plt.plot(ExNIR, marker='o', lw=1, color='c', label='PNR (ours)', linestyle='dashed')
 
     # ExNIR
-    plt.plot(ExNIR_reinit, marker='o', lw=1, color='r', label='ExNIR-reinit (ours)', linestyle='solid')
+    plt.plot(ExNIR_reinit, marker='o', lw=1, color='r', label='PNR-reinit (ours)', linestyle='solid')
 
     # MLT
     plt.plot(MTL, '-o', lw=1, color='m', label='MTL')
