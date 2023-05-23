@@ -1,4 +1,16 @@
-# NeRV: Neural Representations for Videos  (NeurIPS 2021)
+# Progressive Neural Representation for Seqeuntial Video Compilation (NeurIPS 2023)
+## To train PNR
+
+```
+./scripts/run.sh #gpu train #sparsity
+```
+
+## To evaluate PNR
+```
+./scripts/run.sh #gpu eval #sparsity
+```
+
+## Baseline (NeRV, STL): Neural Representations for Videos  (NeurIPS 2021)
 ### [Project Page](https://haochen-rye.github.io/NeRV) | [Paper](https://arxiv.org/abs/2110.13903) | [UVG Data](http://ultravideo.fi/#testsequences) 
 
 
