@@ -1,4 +1,4 @@
-# Progressive Neural Representation for Seqeuntial Video Compilation (NeurIPS 2023)
+# Progressive Neural Representation for Sequential Video Compilation
 ## To train PNR
 
 ```
