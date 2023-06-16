@@ -1,4 +1,7 @@
 # Progressive Neural Representation for Sequential Video Compilation
+
+![PNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
+
 ## To train PNR
 
 ```
