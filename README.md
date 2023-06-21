@@ -1,4 +1,4 @@
-# Progressive Neural Representation for Sequential Video Compilation
+# [Progressive Neural Representation for Sequential Video Compilation](https://arxiv.org/abs/2306.11305)
 
 ![PNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
 
@@ -105,11 +105,13 @@ We provide numerical results for distortion-compression (Figure 7, 8 and 11) at 
 ## Citation
 If you find our work useful in your research, please cite:
 ```
-@InProceedings{chen2021nerv,
-      title={Ne{RV}: Neural Representations for Videos}, 
-      author={Hao Chen and Bo He and Hanyu Wang and Yixuan Ren and Ser-Nam Lim and Abhinav Shrivastava},
-      year={2021},
-    booktitle={NeurIPS},
+@misc{kang2023progressive,
+      title={Progressive Neural Representation for Sequential Video Compilation}, 
+      author={Haeyong Kang and DaHyun Kim and Jaehong Yoon and Sung Ju Hwang and Chang D Yoo},
+      year={2023},
+      eprint={2306.11305},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
 }
 ```
 
