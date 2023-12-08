@@ -2,13 +2,13 @@
 
 ![PNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
 
-## To train PNR
+## To train PFNR (update soon...)
 
 ```
 ./scripts/run.sh #gpu train #sparsity
 ```
 
-## To evaluate PNR
+## To evaluate PFNR
 ```
 ./scripts/run.sh #gpu eval #sparsity
 ```
