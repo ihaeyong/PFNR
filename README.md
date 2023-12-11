@@ -1,16 +1,24 @@
-# [Progressive Neural Representation for Sequential Video Compilation](https://arxiv.org/abs/2306.11305)
+# [Progressive Fourier Neural Representation for Sequential Video Compilation](https://arxiv.org/abs/2306.11305)
 
 ![PNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
 
-## To train PFNR (update soon...)
+## To train WSN (baseline)
 
 ```
 ./scripts/run.sh #gpu train #sparsity
 ```
 
-## To evaluate PFNR
+## To evaluate WSN (baseline)
 ```
 ./scripts/run.sh #gpu eval #sparsity
+```
+
+## To train PFNR (update soon...)
+```
+```
+
+## To evaluate PFNR (update soon...)
+```
 ```
 
 ## Baseline (NeRV, STL): Neural Representations for Videos  (NeurIPS 2021)
