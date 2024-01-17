@@ -1,6 +1,6 @@
-# [Progressive Fourier Neural Representation for Sequential Video Compilation](https://arxiv.org/abs/2306.11305)
+# [Progressive Fourier Neural Representation for Sequential Video Compilation (ICLR2024)]([https://arxiv.org/abs/2306.11305](https://openreview.net/forum?id=rGFrRMBbOq&referrer=%5BAuthor%20Console%5D(%2Fgroup%3Fid%3DICLR.cc%2F2024%2FConference%2FAuthors%23your-submissions)))
 
-![PNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
+![PFNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
 
 ## To train WSN (baseline)
 
