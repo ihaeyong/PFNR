@@ -1,5 +1,7 @@
 # [Progressive Fourier Neural Representation for Sequential Video Compilation (ICLR2024)](https://arxiv.org/abs/2306.11305)
 
+### Extended Analysis: [Continual Learning: Forget-free Winning Subnetworks for Video Representations (Preprint)](https://arxiv.org/abs/2312.11973)
+
 ![PFNR](https://github.com/ihaeyong/PNR/blob/main/plots/pnr.png)
 
 ## To train WSN (baseline)
