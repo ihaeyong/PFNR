@@ -115,11 +115,23 @@ We provide numerical results for distortion-compression (Figure 7, 8 and 11) at 
 ## Citation
 If you find our work useful in your research, please cite:
 ```
-@misc{kang2023progressive,
-      title={Progressive Neural Representation for Sequential Video Compilation}, 
-      author={Haeyong Kang and DaHyun Kim and Jaehong Yoon and Sung Ju Hwang and Chang D Yoo},
-      year={2023},
+@misc{kang2024progressive,
+      title={Progressive Fourier Neural Representation for Sequential Video Compilation}, 
+      author={Haeyong Kang and Jaehong Yoon and DaHyun Kim and Sung Ju Hwang and Chang D Yoo},
+      year={2024},
       eprint={2306.11305},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
+
+Extended Analysis:
+```
+@misc{kang2024continual,
+      title={Continual Learning: Forget-free Winning Subnetworks for Video Representations}, 
+      author={Haeyong Kang and Jaehong Yoon and Sung Ju Hwang and Chang D. Yoo},
+      year={2024},
+      eprint={2312.11973},
       archivePrefix={arXiv},
       primaryClass={cs.CV}
 }
