@@ -2,7 +2,7 @@
 
 ### Extended Analysis: [Continual Learning: Forget-free Winning Subnetworks for Video Representations (Preprint)](https://arxiv.org/abs/2312.11973)
 
-![PFNR](https://github.com/ihaeyong/PFNR/pfnr.jpg)
+![PFNR]([https://github.com/ihaeyong/PFNR/pfnr.jpg](https://github.com/ihaeyong/PFNR/blob/main/pfnr.jpg))
 
 ## To train WSN (baseline)
 
