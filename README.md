@@ -12,16 +12,24 @@
 
 ## To evaluate WSN (baseline)
 ```
-./scripts/run.sh #gpu eval #sparsity
+./scripts/run.sh #gpu eval #sparsity #bit
 ```
 
-## To train PFNR (update soon...)
+## To train PFNR (FSO3)
 ```
+./scripts/run_fso.sh #gpu train #sparsity
 ```
 
-## To evaluate PFNR (update soon...)
+## To evaluate PFNR (FSO3)
 ```
+./scripts/run_fso.sh #gpu eval #sparsity #bit
 ```
+
+## Public datasets
+
+Davis [Download](https://drive.google.com/file/d/1FGaYc99YuElTYMVgpRvNjrkplNQ2m1Pk/view?usp=drive_link)
+
+UVG8/17 [Download](https://drive.google.com/file/d/1flG-e3qrz2VCeFCLB-rx8EJ45jsISf5h/view?usp=sharing)
 
 ## Baseline (NeRV, STL): Neural Representations for Videos  (NeurIPS 2021)
 ### [Project Page](https://haochen-rye.github.io/NeRV) | [Paper](https://arxiv.org/abs/2110.13903) | [UVG Data](http://ultravideo.fi/#testsequences) 

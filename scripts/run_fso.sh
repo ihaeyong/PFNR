@@ -17,8 +17,8 @@ if [ $2 == 'train' ]; then
            -b 1  --lr 0.0005 \
            --norm none --act swish \
            --subnet --sparsity $3 \
-	       --freq -1 --cat_size -1 \
-           --exp_name wsn
+           --freq 1 --cat_size -1 \
+           --exp_name fso3
 
 
 elif [ $2 == 'eval' ]; then
@@ -36,8 +36,8 @@ elif [ $2 == 'eval' ]; then
            --norm none --act swish \
            --subnet --sparsity $3 \
            --quant_bit $4 \
-           --freq -1 --cat_size -1 \
-           --exp_name wsn
+           --freq 1 --cat_size -1 \
+           --exp_name fso3
 
 elif [ $2 == 'plot' ]; then
 
@@ -54,7 +54,7 @@ elif [ $2 == 'plot' ]; then
            --norm none --act swish \
            --subnet --sparsity $3 --reinit \
            --quant_bit $4 \
-           --freq -1 --cat_size -1 \
-           --exp_name wsn
+           --freq 1 --cat_size -1 \
+           --exp_name fso3
 
 fi
