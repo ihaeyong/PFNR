@@ -144,6 +144,9 @@ def main():
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
 
+    parser.add_argument('--freq', type=int, default=-1, help='freq')
+    parser.add_argument('--cat_size', type=int, default=1, help='cat_size')
+    parser.add_argument('--lin_type', type=str, default='linear', help='fc type') 
     parser.add_argument('--exp_name', type=str, default='baseline', help='exper name, default=baseline')
 
     args = parser.parse_args()
@@ -190,11 +193,21 @@ def main():
     exp_name = args.exp_name
 
     if args.subnet:
+        if args.freq >= 0:
+            if args.cat_size > 0:
+                exp_name += '_cat{}'.format(args.cat_size)
+            else:
+                exp_name += '_sum'
+
         args.sparsity = 1 - args.sparsity
         exp_name += '_sparsity' + str(1-args.sparsity)
+        exp_name += '_{}'.format(args.lin_type)
 
     if args.bias:
         exp_name += '_bias'
+
+    if args.freq >= 0:
+        exp_name += '_freq{}'.format(args.freq)
 
     exp_name += '_fc' + str(args.fc_hw_dim)
     exp_name += '_' + str(args.loss_type)
@@ -211,9 +224,6 @@ def main():
 
     # make exp dir
     os.makedirs('./output/{}'.format(args.exp_name), exist_ok=True)
-
-    #wandb.init(project='NeRV_{}'.format(proj_name),
-    #           entity='haeyong', name=exp_name, config=args)
 
     if args.distributed and args.ngpus_per_node > 1:
         mp.spawn(train, nprocs=args.ngpus_per_node, args=(args,))
@@ -237,23 +247,12 @@ def train(local_rank, args):
 
     elif args.dataset == 'UVG17B':
         data_list = [
-            './data/bunny',
-            './data/city',
-            './data/beauty',
-            './data/focus',
-            './data/bosphorus',
-            './data/kids',
-            './data/bee',
-            './data/pan',
-            './data/jockey',
-            './data/lips',
-            './data/setgo',
-            './data/race',
-            './data/shake',
-            './data/river',
-            './data/yacht',
-            './data/sunbath',
-            './data/twilight'
+            './data/bunny', './data/city', './data/beauty',
+            './data/focus', './data/bosphorus', './data/kids',
+            './data/bee', './data/pan', './data/jockey',
+            './data/lips', './data/setgo', './data/race',
+            './data/shake', './data/river', './data/yacht',
+            './data/sunbath', './data/twilight'
         ]
 
     elif args.dataset == 'UVG8':
@@ -275,7 +274,8 @@ def train(local_rank, args):
                                 bias=args.bias, reduction=args.reduction, conv_type=args.conv_type,
                                 stride_list=args.strides,  sin_res=args.single_res,
                                 lower_width=args.lower_width, sigmoid=args.sigmoid,
-                                sparsity=args.sparsity, n_tasks=args.n_tasks)
+                                sparsity=args.sparsity, n_tasks=args.n_tasks, device=local_rank, 
+                                freq=args.freq, cat_size=args.cat_size, lin_type=args.lin_type)
 
     else:
         model = Generator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
@@ -407,14 +407,19 @@ def train(local_rank, args):
     ExNIR = psnr_matrix[-1]
     plot_psnr(ExNIR, dataset=args.dataset)
 
-    com_used_sparsity = safe_load('./output/{}/coused_sparsity.npy'.format(args.exp_name), True)
-    global_sparsity = safe_load('./output/{}/global_sparsity.npy'.format(args.exp_name), True)
-    reused_sparsity = safe_load('./output/{}/reused_sparsity.npy'.format(args.exp_name), True)
-
-
-    com_used_init_sparsity = safe_load('./output/{}/coused_sparsity_init.npy'.format(args.exp_name), True)
-    global_init_sparsity = safe_load('./output/{}/global_sparsity_init.npy'.format(args.exp_name), True)
-    reused_init_sparsity = safe_load('./output/{}/reused_sparsity_init.npy'.format(args.exp_name), True)
+    com_used_init_sparsity = None
+    if True:
+        com_used_sparsity = safe_load('./output/{}/coused_sparsity.npy'.format(args.exp_name), True)
+        global_sparsity = safe_load('./output/{}/global_sparsity.npy'.format(args.exp_name), True)
+        reused_sparsity = safe_load('./output/{}/reused_sparsity.npy'.format(args.exp_name), True)
+        if False:
+            com_used_init_sparsity = safe_load('./output/{}/coused_sparsity_init.npy'.format(args.exp_name), True)
+            global_init_sparsity = safe_load('./output/{}/global_sparsity_init.npy'.format(args.exp_name), True)
+            reused_init_sparsity = safe_load('./output/{}/reused_sparsity_init.npy'.format(args.exp_name), True)
+        else:
+            com_used_init_sparsity = com_used_sparsity
+            global_init_sparsity = global_sparsity
+            reused_init_sparsity = reused_sparsity
 
     exp_name = args.exp_name + '_psnr'
     plot_acc_matrix(array=psnr_matrix, method=exp_name, dataset=args.dataset)
@@ -423,9 +428,10 @@ def train(local_rank, args):
     plot_acc_matrix(array=msssim_matrix, method=exp_name, dataset=args.dataset)
 
     # plot capacity
-    plot_capacity(global_sparsity, reused_sparsity, com_used_sparsity,
-                  global_init_sparsity, reused_init_sparsity, com_used_init_sparsity,
-                  dataset=args.dataset)
+    if com_used_init_sparsity is not None:
+        plot_capacity(global_sparsity, reused_sparsity, com_used_sparsity,
+                    global_init_sparsity, reused_init_sparsity, com_used_init_sparsity,
+                    dataset=args.dataset)
 
     # plot psnr_bpp
     plot_psnr_bpp(dataset=args.dataset)

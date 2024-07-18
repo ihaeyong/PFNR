@@ -7,7 +7,7 @@ if [ $2 == 'train' ]; then
 
     python train_nerv.py -e 150 \
            --lower-width 96 --num-blocks 1 \
-           --dataset UVG8 --frame_gap 1 \
+           --dataset DAVIS50 --frame_gap 1 \
            --outf bunny_ab --embed 1.25_40 \
            --stem_dim_num 512_1 --reduction 2 \
            --fc_hw_dim 9_16_112 --expansion 1  \
@@ -16,16 +16,16 @@ if [ $2 == 'train' ]; then
            --conv_type conv \
            -b 1  --lr 0.0005 \
            --norm none --act swish \
-           --subnet --sparsity $3 \
-	         --freq 1 --cat_size -1 \
-           --exp_name spec_wo_conv
+           --subnet --sparsity 0.3 \
+	       --freq 1 --cat_size -1 --reinit \
+           --exp_name fso
 
 
 elif [ $2 == 'eval' ]; then
 
-    python train_nerv_eval.py -e 150 \
+    python train_nerv_eval.py -e 50 \
            --lower-width 96 --num-blocks 1 \
-           --dataset UVG17B --frame_gap 1 \
+           --dataset DAVIS50 --frame_gap 1 \
            --outf bunny_ab --embed 1.25_40 \
            --stem_dim_num 512_1 --reduction 2 \
            --fc_hw_dim 9_16_112 --expansion 1  \
@@ -34,16 +34,16 @@ elif [ $2 == 'eval' ]; then
            --conv_type conv \
            -b 1  --lr 0.0005 \
            --norm none --act swish \
-           --subnet --sparsity $3 \
+           --subnet --sparsity 0.3 \
            --quant_bit $4 \
            --freq -1 --cat_size -1 \
            --exp_name wsn
 
 elif [ $2 == 'plot' ]; then
 
-    python plot_nerv_eval.py -e 150 \
+    python plot_nerv_eval.py -e 50 \
            --lower-width 96 --num-blocks 1 \
-           --dataset UVG17B --frame_gap 1 \
+           --dataset DAVIS50 --frame_gap 1 \
            --outf bunny_ab --embed 1.25_40 \
            --stem_dim_num 512_1 --reduction 2 \
            --fc_hw_dim 9_16_112 --expansion 1  \
@@ -52,7 +52,7 @@ elif [ $2 == 'plot' ]; then
            --conv_type conv \
            -b 1 --lr 0.0005 \
            --norm none --act swish \
-           --subnet --sparsity $3 --reinit \
+           --subnet --sparsity 0.3 --reinit \
            --quant_bit $4 \
            --freq 1 --cat_size -1 \
            --exp_name spec

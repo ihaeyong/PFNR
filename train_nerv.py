@@ -37,9 +37,16 @@ def get_task_sparsity(task_id, per_task_masks, g_sparsity=False):
     for key, value in curr_task_masks.items():
         if 'last' in key:
             continue
-
+        
         if value is not None:
-            curr_task_sparsity[key] = value.sum() / value.numel()
+            if 'real' in key or 'imag' in key:
+                continue
+                curr_task_sparsity[key] = []
+                for idx in range(len(value)):                
+                    curr_task_sparsity[key].append(value[idx].sum() / value[idx].numel())
+                    cum_sparsity += value[idx].int().sum()
+            else:
+                curr_task_sparsity[key] = value.sum() / value.numel()
 
     return curr_task_sparsity
 
@@ -50,9 +57,14 @@ def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
         consolidated_masks = deepcopy(per_task_masks[task_id])
     else:
         for key in per_task_masks[task_id].keys():
+
             # Or operation on sparsity
             if consolidated_masks[key] is not None and per_task_masks[task_id][key] is not None:
-                consolidated_masks[key] = 1 - ((1 - consolidated_masks[key]) * (1 - per_task_masks[task_id][key]))
+                if 'real' in key or 'imag' in key:
+                    for idx in range(len(consolidated_masks[key])):
+                        consolidated_masks[key][idx] = 1 - ((1 - consolidated_masks[key][idx]) * (1 - per_task_masks[task_id][key][idx]))
+                else:
+                    consolidated_masks[key] = 1 - ((1 - consolidated_masks[key]) * (1 - per_task_masks[task_id][key]))
 
     return consolidated_masks
 
@@ -62,6 +74,9 @@ def update_grad(model, consolidated_masks):
     if consolidated_masks is not None and consolidated_masks != {}: 
         # if args.use_continual_masks:
         for key in consolidated_masks.keys():
+
+            #if 'imag' in key:
+            #    continue
 
             if (len(key.split('.')) == 3):
                 stem, module, attr = key.split('.')
@@ -77,7 +92,11 @@ def update_grad(model, consolidated_masks):
 
             # Zero-out gradients
             if getattr(module, attr) is not None:
-                getattr(module, attr).grad[consolidated_masks[key] == 1] = 0
+                if 'real' in key or 'imag' in key:
+                    for idx in range(len(consolidated_masks[key])):
+                        getattr(module, attr)[idx].grad[consolidated_masks[key][idx] > 0] = 0                       
+                else:
+                    getattr(module, attr).grad[consolidated_masks[key] == 1] = 0
 
 def main():
     parser = argparse.ArgumentParser()
@@ -155,6 +174,9 @@ def main():
     parser.add_argument('--bias', action='store_true', default=False, help='bias')
     parser.add_argument('--sparsity', '--sparsity', default=0.5, type=float,)
 
+    parser.add_argument('--freq', type=int, default=-1, help='freq')
+    parser.add_argument('--cat_size', type=int, default=1, help='cat_size')
+    parser.add_argument('--lin_type', type=str, default='linear', help='fc type') 
     parser.add_argument('--exp_name', type=str, default='baseline', help='exper name, default=baseline')
 
     args = parser.parse_args()
@@ -201,11 +223,21 @@ def main():
     exp_name = args.exp_name
 
     if args.subnet:
+        if args.freq >= 0:
+            if args.cat_size > 0:
+                exp_name += '_cat{}'.format(args.cat_size)
+            else:
+                exp_name += '_sum'
+                
         args.sparsity = 1 - args.sparsity
         exp_name += '_sparsity' + str(1-args.sparsity)
+        exp_name += '_{}'.format(args.lin_type)
 
     if args.bias:
         exp_name += '_bias'
+
+    if args.freq >= 0:
+        exp_name += '_freq{}'.format(args.freq)
 
     exp_name += '_fc' + str(args.fc_hw_dim)
     exp_name += '_' + str(args.loss_type)
@@ -247,29 +279,66 @@ def train(local_rank, args):
                      './data/twilight']
 
     elif args.dataset == 'UVG17B':
-        data_list = [
-            './data/bunny',
-            './data/city',
-            './data/beauty',
-            './data/focus',
-            './data/bosphorus',
-            './data/kids',
-            './data/bee',
-            './data/pan',
-            './data/jockey',
-            './data/lips',
-            './data/setgo',
-            './data/race',
-            './data/shake',
-            './data/river',
-            './data/yacht',
-            './data/sunbath',
-            './data/twilight'
-        ]
+        data_list = ['./data/bunny', './data/city', './data/beauty', './data/focus', './data/bosphorus',
+            './data/kids', './data/bee', './data/pan', './data/jockey', './data/lips', './data/setgo',
+            './data/race', './data/shake', './data/river', './data/yacht', './data/sunbath', './data/twilight']
 
     elif args.dataset == 'UVG8':
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
                      './data/jockey', './data/setgo', './data/shake', './data/yacht']
+        
+    elif args.dataset == 'DAVIS50':
+        data_list = ['./davis/JPEGImages/1080p/bear', # 1
+                     './davis/JPEGImages/1080p/blackswan', # 2
+                     './davis/JPEGImages/1080p/bmx-bumps', # 3
+                     './davis/JPEGImages/1080p/bmx-trees', # 4
+                     './davis/JPEGImages/1080p/boat', # 5
+                     './davis/JPEGImages/1080p/breakdance', # 6
+                     './davis/JPEGImages/1080p/breakdance-flare', # 7
+                     './davis/JPEGImages/1080p/bus', # 8
+                     './davis/JPEGImages/1080p/camel', # 9
+                     './davis/JPEGImages/1080p/car-roundabout', # 10
+                     './davis/JPEGImages/1080p/car-shadow', # 11
+                     './davis/JPEGImages/1080p/car-turn', # 12
+                     './davis/JPEGImages/1080p/cows', # 13
+                     './davis/JPEGImages/1080p/dance-jump', # 14
+                     './davis/JPEGImages/1080p/dance-twirl', # 15
+                     './davis/JPEGImages/1080p/dog', # 16
+                     './davis/JPEGImages/1080p/dog-agility', # 17
+                     './davis/JPEGImages/1080p/drift-chicane', # 18
+                     './davis/JPEGImages/1080p/drift-straight', # 19
+                     './davis/JPEGImages/1080p/drift-turn', # 20
+                     './davis/JPEGImages/1080p/elephant', # 21
+                     './davis/JPEGImages/1080p/flamingo', # 22
+                     './davis/JPEGImages/1080p/goat', # 23
+                     './davis/JPEGImages/1080p/hike', # 24
+                     './davis/JPEGImages/1080p/hockey', # 25
+                     './davis/JPEGImages/1080p/horsejump-high', # 26
+                     './davis/JPEGImages/1080p/horsejump-low', # 27
+                     './davis/JPEGImages/1080p/kite-surf', # 28
+                     './davis/JPEGImages/1080p/kite-walk', # 29
+                     './davis/JPEGImages/1080p/libby', # 30
+                     './davis/JPEGImages/1080p/lucia', # 31
+                     './davis/JPEGImages/1080p/mallard-fly', # 32
+                     './davis/JPEGImages/1080p/mallard-water', # 33
+                     './davis/JPEGImages/1080p/motocross-bumps', # 34
+                     './davis/JPEGImages/1080p/motocross-jump', # 35
+                     './davis/JPEGImages/1080p/motorbike', # 36
+                     './davis/JPEGImages/1080p/paragliding', # 37
+                     './davis/JPEGImages/1080p/paragliding-launch', # 38
+                     './davis/JPEGImages/1080p/parkour', # 39
+                     './davis/JPEGImages/1080p/rhino', # 40
+                     './davis/JPEGImages/1080p/rollerblade', # 41
+                     './davis/JPEGImages/1080p/scooter-black', # 42
+                     './davis/JPEGImages/1080p/scooter-gray', # 43
+                     './davis/JPEGImages/1080p/soapbox', # 44
+                     './davis/JPEGImages/1080p/soccerball', # 45
+                     './davis/JPEGImages/1080p/stroller', # 46
+                     './davis/JPEGImages/1080p/surf', # 47
+                     './davis/JPEGImages/1080p/swing', # 48
+                     './davis/JPEGImages/1080p/tennis', # 49
+                     './davis/JPEGImages/1080p/train', # 50
+                     ]
 
     args.n_tasks = len(data_list)
 
@@ -278,7 +347,7 @@ def train(local_rank, args):
 
     # define task_masks
     per_task_masks = {}
-
+    per_best_masks = {}
     if args.subnet:
         model = SubnetGeneratorMH(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
                                 fc_hw_dim=args.fc_hw_dim, expansion=args.expansion,
@@ -286,7 +355,8 @@ def train(local_rank, args):
                                 bias=args.bias, reduction=args.reduction, conv_type=args.conv_type,
                                 stride_list=args.strides,  sin_res=args.single_res,
                                 lower_width=args.lower_width, sigmoid=args.sigmoid,
-                                sparsity=args.sparsity, n_tasks=args.n_tasks)
+                                sparsity=args.sparsity, n_tasks=args.n_tasks, device=local_rank, 
+                                  freq=args.freq, cat_size=args.cat_size, lin_type=args.lin_type)
 
     else:
         model = Generator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
@@ -295,7 +365,7 @@ def train(local_rank, args):
                           bias = True, reduction=args.reduction, conv_type=args.conv_type,
                           stride_list=args.strides,  sin_res=args.single_res,
                           lower_width=args.lower_width, sigmoid=args.sigmoid,
-                          subnet=args.subnet, sparsity=args.sparsity)
+                          subnet=args.subnet, sparsity=args.sparsity, cat_size=-1)
 
     ##### prune model params and flops #####
     prune_net = args.prune_ratio < 1
@@ -397,6 +467,23 @@ def train(local_rank, args):
         val_best_msssim = checkpoint['val_best_msssim'].to(torch.device(loc))
         optimizer.load_state_dict(checkpoint['optimizer'])
 
+
+    resumed_task_id = 0
+    if resumed_task_id > 0:
+        checkpoints=torch.load('./output/{}/model_task{}_val_best.pth'.format(
+            args.exp_name, resumed_task_id))
+        args.start_epoch = 0 #checkpoints['epoch']
+        #start_task_id = checkpoints['task_id']
+        best_resumed_model = checkpoints['state_dict']
+        train_best_psnr = checkpoints['train_best_psnr']
+        train_best_msssim = checkpoints['train_best_msssim']
+        val_best_psnr = checkpoints['val_best_psnr']
+        val_best_msssim = checkpoints['val_best_msssim']
+        #optimizer = checkpoints['optimizer']
+        per_task_masks = checkpoints['per_task_masks']
+        #per_best_masks = checkpoints['per_best_masks']
+        consolidated_masks = checkpoints['consolidated_masks']
+
     if args.not_resume_epoch:
         args.start_epoch = 0
 
@@ -440,6 +527,13 @@ def train(local_rank, args):
     start = datetime.now()
 
     for task_id, cla in taskcla:
+
+        #if task_id != resumed_task_id + 1:
+        #    continue
+        #else:
+        #    if resumed_task_id > 0:
+        #        model = set_model(model,best_resumed_model, getback=True)
+
         train_dataloader = train_dataloader_dict[task_id]
         val_dataloader = val_dataloader_dict[task_id]
         data_size = data_size_dict[task_id]
@@ -454,10 +548,6 @@ def train(local_rank, args):
         start = datetime.now()
         total_epochs = args.epochs * args.cycles
         total_epoch_train_time = 0
-
-        if False:
-            sparsity -= 0.01 * task_id
-            model.apply(lambda m: setattr(m, "sparsity",sparsity))
 
         if args.reinit:
             model.reinit_masks()
@@ -598,11 +688,15 @@ def train(local_rank, args):
                         f.write(print_str + '\n')
                     if is_val_best:
                         best_model = get_model(model)
+                        per_best_masks[task_id] = model.get_masks()
+
+                        te_psnr, te_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                                      per_best_masks, task_id, mode='test')
                     else:
                         pass
 
         # Restore the best model
-        set_model(model,best_model)
+        model = set_model(model,best_model, getback=True)
         train_time_dict[task_id] = total_epoch_train_time
 
         if args.subnet:
@@ -621,6 +715,7 @@ def train(local_rank, args):
             'val_best_msssim': val_best_msssim,
             'optimizer': optimizer.state_dict(),
             'per_task_masks': per_task_masks,
+            'per_best_masks': per_best_masks,
             'consolidated_masks': consolidated_masks,
         }
         torch.save(save_checkpoint, './output/{}/model_task{}_val_best.pth'.format(args.exp_name, task_id))
@@ -631,7 +726,7 @@ def train(local_rank, args):
 
             if task_jd == task_id:
                 val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
-                                                per_task_masks, task_id, mode='test')
+                                                per_best_masks, task_id, mode='test')
             elif task_jd < task_id:
                 if True:
                     val_psnr, val_msssim = psnr_matrix[task_id-1, task_jd], msssim_matrix[task_id-1, task_jd]

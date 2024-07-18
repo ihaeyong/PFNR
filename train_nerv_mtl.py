@@ -19,15 +19,13 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from tqdm import tqdm
 
-from model_nerv import CustomDataSet, Generator
+from model_nerv import CustomDataSet, CustomDataSetMTL1, GeneratorMTL
 from model_subnet_nerv import SubnetGenerator, SubnetGeneratorMH
 from utils import *
 
 import glob
 from copy import deepcopy
 import wandb
-
-import matplotlib.pyplot as plt
 
 def get_task_sparsity(task_id, per_task_masks, g_sparsity=False):
     curr_task_sparsity = {}
@@ -36,97 +34,21 @@ def get_task_sparsity(task_id, per_task_masks, g_sparsity=False):
     else:
         curr_task_masks = per_task_masks[task_id]
 
-    cum_sparsity = 0
     for key, value in curr_task_masks.items():
         if 'last' in key:
             continue
-
+        
         if value is not None:
             if 'real' in key or 'imag' in key:
-
+                continue
                 curr_task_sparsity[key] = []
                 for idx in range(len(value)):                
                     curr_task_sparsity[key].append(value[idx].sum() / value[idx].numel())
                     cum_sparsity += value[idx].int().sum()
-
             else:
                 curr_task_sparsity[key] = value.sum() / value.numel()
-                cum_sparsity += value.sum()
 
-    return curr_task_sparsity, cum_sparsity
-
-
-def get_reused_sparsity(task_id, per_task_masks, consolidated_masks):
-    curr_reused_sparsity = {}
-
-    if task_id > 0:
-        prev_task_masks = per_task_masks[task_id-1]
-    else:
-        prev_task_masks = per_task_masks[task_id]
-
-    curr_task_masks = per_task_masks[task_id]
-
-    for key, value in curr_task_masks.items():
-        if 'last' in key:
-            continue
-
-        if 'real' in key or 'imag' in key:
-            curr_reused_sparsity[key] = []
-            for idx in range(len(prev_task_masks[key])):
-                prev_value = prev_task_masks[key][idx]
-                if prev_value is not None:
-                    value[idx] = prev_value * value[idx]
-
-                if value is not None:
-                    curr_reused_sparsity[key].append(value[idx].sum() / value[idx].numel())
-
-        else:
-            prev_value = prev_task_masks[key]
-            if prev_value is not None:
-                value = prev_value * value
-
-            if value is not None:
-                curr_reused_sparsity[key] = value.sum() / value.numel()
-
-    return curr_reused_sparsity
-
-def get_coused_sparsity(task_id, per_task_masks, consolidated_masks):
-
-    curr_coused_sparsity = {}
-    curr_coused_mask = per_task_masks[task_id]
-
-    if task_id == 0:
-        task_id = 1
-
-    for tid in range(task_id):
-        prev_task_masks = per_task_masks[tid]
-
-        for key, value in prev_task_masks.items():
-            if 'last' in key:
-                continue
-
-            if 'real' in key or 'imag' in key:
-                curr_coused_sparsity[key] = []
-                for idx in range(len(curr_coused_mask[key])):
-                    con_value = curr_coused_mask[key][idx]
-                    if con_value is not None:
-                        value[idx] = con_value * value[idx]
-                        curr_coused_mask[key][idx] = value[idx]
-
-                    if value[idx] is not None:
-                        curr_coused_sparsity[key].append(value[idx].sum() / value[idx].numel())
-
-            else:
-                con_value = curr_coused_mask[key]
-                if con_value is not None:
-                    value = con_value * value
-                    curr_coused_mask[key] = value
-
-                if value is not None:
-                    curr_coused_sparsity[key] = value.sum() / value.numel()
-
-    return curr_coused_sparsity
-
+    return curr_task_sparsity
 
 
 def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
@@ -135,6 +57,7 @@ def get_consolidated_masks(per_task_masks, task_id, consolidated_masks=None):
         consolidated_masks = deepcopy(per_task_masks[task_id])
     else:
         for key in per_task_masks[task_id].keys():
+
             # Or operation on sparsity
             if consolidated_masks[key] is not None and per_task_masks[task_id][key] is not None:
                 if 'real' in key or 'imag' in key:
@@ -152,6 +75,9 @@ def update_grad(model, consolidated_masks):
         # if args.use_continual_masks:
         for key in consolidated_masks.keys():
 
+            #if 'imag' in key:
+            #    continue
+
             if (len(key.split('.')) == 3):
                 stem, module, attr = key.split('.')
                 module = getattr(getattr(model, stem), module)
@@ -165,11 +91,11 @@ def update_grad(model, consolidated_masks):
                 module = getattr(getattr(getattr(getattr(model, layers), layer), module1), module2)
 
             # Zero-out gradients
-            if 'real' in key or 'imag' in key:
+            if getattr(module, attr) is not None:
+                if 'real' in key or 'imag' in key:
                     for idx in range(len(consolidated_masks[key])):
-                        getattr(module, attr)[idx].grad[consolidated_masks[key][idx] > 0] = 0
-            else:
-                if getattr(module, attr) is not None:
+                        getattr(module, attr)[idx].grad[consolidated_masks[key][idx] > 0] = 0                       
+                else:
                     getattr(module, attr).grad[consolidated_masks[key] == 1] = 0
 
 def main():
@@ -250,7 +176,7 @@ def main():
 
     parser.add_argument('--freq', type=int, default=-1, help='freq')
     parser.add_argument('--cat_size', type=int, default=1, help='cat_size')
-    parser.add_argument('--lin_type', type=str, default='linear', help='fc type')
+    parser.add_argument('--lin_type', type=str, default='linear', help='fc type') 
     parser.add_argument('--exp_name', type=str, default='baseline', help='exper name, default=baseline')
 
     args = parser.parse_args()
@@ -302,6 +228,7 @@ def main():
                 exp_name += '_cat{}'.format(args.cat_size)
             else:
                 exp_name += '_sum'
+                
         args.sparsity = 1 - args.sparsity
         exp_name += '_sparsity' + str(1-args.sparsity)
         exp_name += '_{}'.format(args.lin_type)
@@ -328,9 +255,6 @@ def main():
     # make exp dir
     os.makedirs('./output/{}'.format(args.exp_name), exist_ok=True)
 
-    #wandb.init(project='NeRV_{}'.format(proj_name),
-    #           entity='haeyong', name=exp_name, config=args)
-
     if args.distributed and args.ngpus_per_node > 1:
         mp.spawn(train, nprocs=args.ngpus_per_node, args=(args,))
     else:
@@ -344,6 +268,11 @@ def train(local_rank, args):
     np.random.seed(args.manualSeed)
     random.seed(args.manualSeed)
 
+    if local_rank in [0, None]:
+        wandb.init(project='NeRV_{}'.format(args.dataset),
+                   entity='haeyong', name=args.exp_name, config=args)
+
+
     if args.dataset == 'UVG17A':
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
                      './data/jockey', './data/setgo', './data/shake', './data/yacht',
@@ -352,29 +281,66 @@ def train(local_rank, args):
                      './data/twilight']
 
     elif args.dataset == 'UVG17B':
-        data_list = [
-            './data/bunny',
-            './data/city',
-            './data/beauty',
-            './data/focus',
-            './data/bosphorus',
-            './data/kids',
-            './data/bee',
-            './data/pan',
-            './data/jockey',
-            './data/lips',
-            './data/setgo',
-            './data/race',
-            './data/shake',
-            './data/river',
-            './data/yacht',
-            './data/sunbath',
-            './data/twilight'
-        ]
+        data_list = ['./data/bunny', './data/city', './data/beauty', './data/focus', './data/bosphorus',
+            './data/kids', './data/bee', './data/pan', './data/jockey', './data/lips', './data/setgo',
+            './data/race', './data/shake', './data/river', './data/yacht', './data/sunbath', './data/twilight']
 
     elif args.dataset == 'UVG8':
         data_list = ['./data/bunny', './data/beauty' , './data/bosphorus', './data/bee',
                      './data/jockey', './data/setgo', './data/shake', './data/yacht']
+        
+    elif args.dataset == 'DAVIS50':
+        data_list = ['./davis/JPEGImages/1080p/bear', # 1
+                     './davis/JPEGImages/1080p/blackswan', # 2
+                     './davis/JPEGImages/1080p/bmx-bumps', # 3
+                     './davis/JPEGImages/1080p/bmx-trees', # 4
+                     './davis/JPEGImages/1080p/boat', # 5
+                     './davis/JPEGImages/1080p/breakdance', # 6
+                     './davis/JPEGImages/1080p/breakdance-flare', # 7
+                     './davis/JPEGImages/1080p/bus', # 8
+                     './davis/JPEGImages/1080p/camel', # 9
+                     './davis/JPEGImages/1080p/car-roundabout', # 10
+                     './davis/JPEGImages/1080p/car-shadow', # 11
+                     './davis/JPEGImages/1080p/car-turn', # 12
+                     './davis/JPEGImages/1080p/cows', # 13
+                     './davis/JPEGImages/1080p/dance-jump', # 14
+                     './davis/JPEGImages/1080p/dance-twirl', # 15
+                     './davis/JPEGImages/1080p/dog', # 16
+                     './davis/JPEGImages/1080p/dog-agility', # 17
+                     './davis/JPEGImages/1080p/drift-chicane', # 18
+                     './davis/JPEGImages/1080p/drift-straight', # 19
+                     './davis/JPEGImages/1080p/drift-turn', # 20
+                     './davis/JPEGImages/1080p/elephant', # 21
+                     './davis/JPEGImages/1080p/flamingo', # 22
+                     './davis/JPEGImages/1080p/goat', # 23
+                     './davis/JPEGImages/1080p/hike', # 24
+                     './davis/JPEGImages/1080p/hockey', # 25
+                     './davis/JPEGImages/1080p/horsejump-high', # 26
+                     './davis/JPEGImages/1080p/horsejump-low', # 27
+                     './davis/JPEGImages/1080p/kite-surf', # 28
+                     './davis/JPEGImages/1080p/kite-walk', # 29
+                     './davis/JPEGImages/1080p/libby', # 30
+                     './davis/JPEGImages/1080p/lucia', # 31
+                     './davis/JPEGImages/1080p/mallard-fly', # 32
+                     './davis/JPEGImages/1080p/mallard-water', # 33
+                     './davis/JPEGImages/1080p/motocross-bumps', # 34
+                     './davis/JPEGImages/1080p/motocross-jump', # 35
+                     './davis/JPEGImages/1080p/motorbike', # 36
+                     './davis/JPEGImages/1080p/paragliding', # 37
+                     './davis/JPEGImages/1080p/paragliding-launch', # 38
+                     './davis/JPEGImages/1080p/parkour', # 39
+                     './davis/JPEGImages/1080p/rhino', # 40
+                     './davis/JPEGImages/1080p/rollerblade', # 41
+                     './davis/JPEGImages/1080p/scooter-black', # 42
+                     './davis/JPEGImages/1080p/scooter-gray', # 43
+                     './davis/JPEGImages/1080p/soapbox', # 44
+                     './davis/JPEGImages/1080p/soccerball', # 45
+                     './davis/JPEGImages/1080p/stroller', # 46
+                     './davis/JPEGImages/1080p/surf', # 47
+                     './davis/JPEGImages/1080p/swing', # 48
+                     './davis/JPEGImages/1080p/tennis', # 49
+                     './davis/JPEGImages/1080p/train', # 50
+                     ]
 
     args.n_tasks = len(data_list)
 
@@ -383,7 +349,7 @@ def train(local_rank, args):
 
     # define task_masks
     per_task_masks = {}
-
+    per_best_masks = {}
     if args.subnet:
         model = SubnetGeneratorMH(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
                                 fc_hw_dim=args.fc_hw_dim, expansion=args.expansion,
@@ -391,17 +357,17 @@ def train(local_rank, args):
                                 bias=args.bias, reduction=args.reduction, conv_type=args.conv_type,
                                 stride_list=args.strides,  sin_res=args.single_res,
                                 lower_width=args.lower_width, sigmoid=args.sigmoid,
-                                  sparsity=args.sparsity, n_tasks=args.n_tasks, device=local_rank,
+                                sparsity=args.sparsity, n_tasks=args.n_tasks, device=local_rank, 
                                   freq=args.freq, cat_size=args.cat_size, lin_type=args.lin_type)
 
     else:
-        model = Generator(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
+        model = GeneratorMTL(embed_length=args.embed_length, stem_dim_num=args.stem_dim_num,
                           fc_hw_dim=args.fc_hw_dim, expansion=args.expansion,
                           num_blocks=args.num_blocks, norm=args.norm, act=args.act,
                           bias = True, reduction=args.reduction, conv_type=args.conv_type,
                           stride_list=args.strides,  sin_res=args.single_res,
                           lower_width=args.lower_width, sigmoid=args.sigmoid,
-                          subnet=args.subnet, sparsity=args.sparsity)
+                          subnet=args.subnet, sparsity=args.sparsity, cat_size=-1, n_tasks=args.n_tasks)
 
     ##### prune model params and flops #####
     prune_net = args.prune_ratio < 1
@@ -429,18 +395,7 @@ def train(local_rank, args):
     ##### get model params and flops #####
     total_params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
     if local_rank in [0, None]:
-
-        if False:
-            params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
-        else:
-
-            params = 0
-            for n, p in model.named_parameters():
-                if 'w_m' in n:
-                    continue
-                params+=p.data.nelement()
-
-            params = params / 1e6
+        params = sum([p.data.nelement() for p in model.parameters()]) / 1e6
 
         print(f'{args}\n {model}\n Model Params: {params}M')
         with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
@@ -461,9 +416,9 @@ def train(local_rank, args):
         assert torch.distributed.is_initialized()
         args.batchSize = int(args.batchSize / args.ngpus_per_node)
         model = torch.nn.parallel.DistributedDataParallel(model.to(local_rank), device_ids=[local_rank], \
-                                                          output_device=local_rank, find_unused_parameters=False)
+                                                          output_device=local_rank, find_unused_parameters=True)
     elif args.ngpus_per_node > 1:
-        model = torch.nn.DataParallel(model).cuda()
+        model = torch.nn.DataParallel(model).cuda() #model.cuda() #
     else:
         model = model.cuda()
 
@@ -495,6 +450,7 @@ def train(local_rank, args):
                 pruning_method=prune.L1Unstructured,
                 amount=1 - prune_base_ratio ** prune_num,
             )
+
             sparisity_num = 0.
             for param in param_list:
                 sparisity_num += (param.weight == 0).sum()
@@ -513,189 +469,234 @@ def train(local_rank, args):
         val_best_msssim = checkpoint['val_best_msssim'].to(torch.device(loc))
         optimizer.load_state_dict(checkpoint['optimizer'])
 
+    resumed_task_id = 0
+    if resumed_task_id > 0:
+        checkpoints=torch.load('./output/{}/model_task{}_val_best.pth'.format(
+            args.exp_name, resumed_task_id))
+        args.start_epoch = 0 #checkpoints['epoch']
+        #start_task_id = checkpoints['task_id']
+        best_resumed_model = checkpoints['state_dict']
+        train_best_psnr = checkpoints['train_best_psnr']
+        train_best_msssim = checkpoints['train_best_msssim']
+        val_best_psnr = checkpoints['val_best_psnr']
+        val_best_msssim = checkpoints['val_best_msssim']
+        #optimizer = checkpoints['optimizer']
+        per_task_masks = checkpoints['per_task_masks']
+        #per_best_masks = checkpoints['per_best_masks']
+        consolidated_masks = checkpoints['consolidated_masks']
+
     if args.not_resume_epoch:
         args.start_epoch = 0
 
     # setup dataloader
     img_transforms = transforms.ToTensor()
     DataSet = CustomDataSet
+    DataSetMTL = CustomDataSetMTL1
 
     psnr_matrix = np.zeros((args.n_tasks, args.n_tasks))
     msssim_matrix = np.zeros((args.n_tasks, args.n_tasks))
     taskcla = [(task_id, name.split('/')[-1])for task_id, name in enumerate(data_list)]
     print(taskcla)
 
-    train_dataloader_dict = {}
     val_dataloader_dict = {}
-    data_size_dict = {}
-    train_time_dict = {}
     for task_id, cla in taskcla:
         val_data_dir = data_list[task_id]
+
         val_dataset = DataSet(val_data_dir, img_transforms, vid_list=args.vid, frame_gap=args.test_gap,  )
         val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset) if args.distributed else None
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batchSize,  shuffle=False,
-                                                     num_workers=args.workers, pin_memory=True,
-                                                     sampler=val_sampler, drop_last=False,
-                                                     worker_init_fn=worker_init_fn)
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=1,  shuffle=False,
+                                                     num_workers=args.workers, pin_memory=True, 
+                                                     sampler=val_sampler, drop_last=False, worker_init_fn=worker_init_fn)
 
         val_dataloader_dict[task_id] = val_dataloader
 
-    print('*' * 50)
-    consolidated_masks = None
-    global_sparsity = {}
-    reused_sparsity = {}
-    used_sparsity = {}
-    coused_sparsity = {}
-    sparsity = args.sparsity
-
-    for task_id, cla in taskcla:
-
-        #if task_id != args.n_tasks -1 :
-        #    continue
-
-        print(f'video:{cla}')
-        val_dataloader = val_dataloader_dict[task_id]
-        checkpoints=torch.load('./output/{}/model_task{}_val_best.pth'.format(args.exp_name, 16)) #args.n_tasks-1))
-
-        #assert task_id == checkpoints['task_id']
+    if args.eval_only:
+        print('Evaluation ...')
+        checkpoints=torch.load('./output/{}/model_task50_val_best.pth'.format(args.exp_name))
         epoch = checkpoints['epoch']
         train_time_dict = checkpoints['train_time']
         state_dict = checkpoints['state_dict']
-        train_best_psnr = checkpoints['train_best_psnr']
-        train_best_msssim = checkpoints['train_best_msssim']
-        val_best_psnr = checkpoints['val_best_psnr']
-        val_best_msssim = checkpoints['val_best_msssim']
-        per_task_masks = checkpoints['per_task_masks']
-        consolidated_masks = checkpoints['consolidated_masks']
-
-        # sparsity
-        if False:
-            global_sparsity[task_id] = {}
-            reused_sparsity[task_id] = {}
-            coused_sparsity[task_id] = {}
-            used_sparsity[task_id] = {}
-            global_sparsity[task_id], used_sparsity[task_id] = get_task_sparsity(task_id, consolidated_masks, g_sparsity=True)
-            reused_sparsity[task_id] = get_reused_sparsity(task_id, per_task_masks, consolidated_masks)
-            coused_sparsity[task_id] = get_coused_sparsity(task_id, per_task_masks, consolidated_masks)
-
-            print('*' * 50)
-            for key, value in global_sparsity[task_id].items():
-                if value is not None:
-                    re_value = reused_sparsity[task_id][key]
-                    cre_value = coused_sparsity[task_id][key]
-                    print('task_id{} sparsity : {}, c{}, reused c{}, coused c{}'.format(task_id,
-                                                                                        key,
-                                                                                        value,
-                                                                                        re_value, cre_value))
-            print(checkpoints['taskcla'])
-
-            head_params = model.head_layers[0].weight.data.nelement() * (task_id + 1)
-            used_sparsity[task_id] = (used_sparsity[task_id] + head_params) / (params * 1e6)
-
-            print('task_id{}, used_sparsity: {}:'.format(task_id, used_sparsity[task_id]))
-            print('*' * 50)
-
-            safe_save('./output/{}/global_sparsity'.format(args.exp_name), global_sparsity)
-            safe_save('./output/{}/reused_sparsity'.format(args.exp_name), reused_sparsity)
-            safe_save('./output/{}/used_sparsity'.format(args.exp_name), used_sparsity)
-            safe_save('./output/{}/coused_sparsity'.format(args.exp_name), coused_sparsity)
-            
-            continue
-
         model = set_model(model, state_dict, getback=True)
+
+        time_str = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        print_str = f'{time_str}\t Results for checkpoint: {args.weight}\n'
+        if prune_net:
+            for param in param_to_prune:
+                prune.remove(param[0], param[1])
+            sparisity_num = 0.
+            for param in param_list:
+                sparisity_num += (param.weight == 0).sum()
+            print_str += f'Model sparsity at Epoch{args.start_epoch}: {sparisity_num / 1e6 / total_params}\n'
 
         for task_jd, cla in taskcla:
             val_dataloader = val_dataloader_dict[task_jd]
+            val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
+                                            per_best_masks, task_jd, mode='test')
 
-            if args.dump_images:
-                if task_id + 1 < args.n_tasks:
-                    continue
+            psnr_matrix[task_jd, task_jd] = val_psnr.item()
+            msssim_matrix[task_jd, task_jd] = val_msssim.item()
 
-            if task_jd == task_id:
-                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
-                                                per_task_masks, task_id=task_id, task_jd=task_jd, mode='test')
-            elif task_jd < task_id:
-                #val_psnr, val_msssim = psnr_matrix[task_id-1, task_jd], msssim_matrix[task_id-1, task_jd]
-                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
-                                                per_task_masks, task_id=task_jd, task_jd=task_jd, mode='test')
+            print('*' * 50)
+            print('task_id{}/jd:{}, psnr:{}, msssim:{}'.format(task_jd, task_jd, val_psnr.item(), val_msssim.item()))
+            print('*' * 50)
+
+        print('PSNR =')
+        for i_a in range(args.n_tasks):
+            print('\t',end='')
+            for j_a in range(args.n_tasks):
+                print('{:5.2f} '.format(psnr_matrix[i_a, j_a]),end='')
+            print()
+
+        print('MSSIM =')
+        for i_a in range(args.n_tasks):
+            print('\t',end='')
+            for j_a in range(args.n_tasks):
+                print('{:5.2f} '.format(msssim_matrix[i_a, j_a]),end='')
+            print()
+
+        return
+
+    train_dataset = DataSetMTL(data_list, img_transforms,vid_list=args.vid, frame_gap=args.frame_gap,)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset) if args.distributed else None
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batchSize, shuffle=(train_sampler is None),
+                                                       num_workers=args.workers, pin_memory=True, sampler=train_sampler, 
+                                                       drop_last=True, worker_init_fn=worker_init_fn)
+    
+    data_size = len(train_dataset)
+    
+
+    if local_rank in [0, None]:
+        print('*' * 50)
+        print('-- training --')
+        print('*' * 50)
+    
+    best_model = get_model(model)
+
+    optimizer = optim.Adam(model.parameters(), betas=(args.beta, 0.999))
+    train_best_psnr, train_best_msssim, val_best_psnr, val_best_msssim = [torch.tensor(0) for _ in range(4)]
+    is_train_best, is_val_best = False, False
+
+    # Training
+    start = datetime.now()
+    total_epochs = args.epochs * args.cycles
+    total_epoch_train_time = 0
+
+    for epoch in range(args.start_epoch, total_epochs):
+        model.train()
+        epoch_start_time = datetime.now()
+        psnr_list = []
+        msssim_list = []
+        # iterate over dataloader
+        for i, (data,  norm_idx, task_id) in enumerate(train_dataloader): 
+            embed_input = PE(norm_idx)
+            if len(embed_input.size()) != 2:
+                embed_input = embed_input.squeeze(-1)
+            if len(data.size()) != 4:
+                data = data[0]
+
+            #task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
+            task_idx = (task_id+1) / (args.n_tasks + 1)
+            embed_task = PE(task_idx)
+            embed_input = torch.cat([embed_input, embed_task], 1)
+
+            if local_rank is not None:
+                data = data.cuda(local_rank, non_blocking=True)
+                embed_input = embed_input.cuda(local_rank, non_blocking=True)
             else:
-                val_psnr, val_msssim = evaluate(model, val_dataloader, PE, local_rank, args,
-                                                per_task_masks, task_id=task_id, task_jd=task_jd, mode='test')
+                data, embed_input = data.cuda(non_blocking=True), embed_input.cuda(non_blocking=True)
 
-            psnr_matrix[task_id, task_jd] = val_psnr.item()
-            msssim_matrix[task_id, task_jd] = val_msssim.item()
+            # forward and backward
+            output_list = model(embed_input, task_id=task_id)
 
-            print('*' * 50)
-            print('task_id{}/jd:{}, psnr:{}, msssim:{}'.format(task_id, task_jd, val_psnr.item(), val_msssim.item()))
-            print('*' * 50)
+            output_list = [F.adaptive_avg_pool2d(x, (720, 1280)) for x in output_list]
+            target_list = [F.adaptive_avg_pool2d(data, (720, 1280)) for x in output_list]
+            loss_list = [loss_fn(output, target, args) for output, target in zip(output_list, target_list)]
+            loss_list = [loss_list[i] * (args.lw if i < len(loss_list) - 1 else 1) for i in range(len(loss_list))]
+            loss_sum = sum(loss_list)
+        
+            lr = adjust_lr(optimizer, epoch % args.epochs, i, data_size, args)
+            optimizer.zero_grad()
+            loss_sum.backward()
+            optimizer.step()
 
-            print('PSNR =')
-            for i_a in range(task_id+1):
-                print('\t',end='')
-                for j_a in range(args.n_tasks):
-                    print('{:5.2f} '.format(psnr_matrix[i_a, j_a]),end='')
-                print()
+            # compute psnr and msssim
+            psnr_list.append(psnr_fn(output_list, target_list))
+            msssim_list.append(msssim_fn(output_list, target_list))
+            if i % args.print_freq == 0 or i == len(train_dataloader) - 1:
+                train_psnr = torch.cat(psnr_list, dim=0) #(batchsize, num_stage)
+                train_psnr = torch.mean(train_psnr, dim=0) #(num_stage)
+                train_msssim = torch.cat(msssim_list, dim=0) #(batchsize, num_stage)
+                train_msssim = torch.mean(train_msssim.float(), dim=0) #(num_stage)
+                time_now_string = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+                print_str = '[{}] Rank:{}, Epoch[{}/{}],Step [{}/{}], lr:{:.2e} PSNR: {}, MSSSIM: {}'.format(
+                    time_now_string, local_rank, epoch+1, args.epochs, i+1, len(train_dataloader), lr, 
+                    RoundTensor(train_psnr, 2, False), RoundTensor(train_msssim, 4, False))
+                print(print_str, flush=True)
+                if local_rank in [0, None]:
+                    with open('{}/rank0.txt'.format(args.outf), 'a') as f:
+                        f.write(print_str + '\n')
 
-            print('MSSIM =')
-            for i_a in range(task_id+1):
-                print('\t',end='')
-                for j_a in range(args.n_tasks):
-                    print('{:5.2f} '.format(msssim_matrix[i_a, j_a]),end='')
-                print()
+        # compute psnr and msssim
+        if local_rank in [0, None]:
+            train_psnr = torch.cat(psnr_list, dim=0) #(batchsize, num_stage)
+            train_psnr = torch.mean(train_psnr, dim=0) #(num_stage)
+            train_msssim = torch.cat(msssim_list, dim=0) #(batchsize, num_stage)
+            train_msssim = torch.mean(train_msssim.float(), dim=0) #(num_stage)
+            time_now_string = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            print_str = '[{}] Rank:{}, Epoch[{}/{}], Step [{}/{}], lr:{:.2e} PSNR: {}, MSSSIM: {}'.format(
+                time_now_string, local_rank, epoch+1, args.epochs, i+1, len(train_dataloader), lr, 
+                RoundTensor(train_psnr, 2, False), RoundTensor(train_msssim, 4, False))
+            print(print_str, flush=True)
 
-        del state_dict
+        
+        # collect numbers from other gpus
+        if args.distributed and args.ngpus_per_node > 1:
+            train_psnr = all_reduce([train_psnr.to(local_rank)])
+            train_msssim = all_reduce([train_msssim.to(local_rank)])
 
+        # ADD train_PSNR TO TENSORBOARD
+        if local_rank in [0, None]:
+            h, w = output_list[-1].shape[-2:]
+            is_train_best = train_psnr[-1] > train_best_psnr
+            train_best_psnr = train_psnr[-1] if train_psnr[-1] > train_best_psnr else train_best_psnr
+            train_best_msssim = train_msssim[-1] if train_msssim[-1] > train_best_msssim else train_best_msssim
+            log_dict={'epoch': epoch+1,
+                        f'Train/PSNR_{h}X{w}_gap{args.frame_gap}': train_psnr[-1].item(),
+                        f'Train/MSSSIM_{h}X{w}_gap{args.frame_gap}': train_msssim[-1].item(),
+                        f'Train/best_PSNR_{h}X{w}_gap{args.frame_gap}': train_best_psnr.item(),
+                        f'Train/best_MSSSIM_{h}X{w}_gap{args.frame_gap}': train_best_msssim,
+                        'Train/lr': lr}
+            wandb.log(log_dict)
 
-    print('*' * 50)
-    print(taskcla)
+        if epoch % 5 == 0 and local_rank in [0, None]:
+            print_str = 'epoch:{},\t{}p: current: {:.2f}\t best: {:.2f}\t msssim_best: {:.4f}\t'.format(epoch+1, h, train_psnr[-1].item(), train_best_psnr.item(), train_best_msssim.item())
+            print(print_str, flush=True)
+            with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
+                f.write(print_str + '\n')
+                epoch_end_time = datetime.now()
+                total_epoch_train_time += (epoch_end_time - epoch_start_time).total_seconds()
+                print("Time/epoch: \tCurrent:{:.2f} \tAverage:{:.2f}".format( (epoch_end_time - epoch_start_time).total_seconds(), \
+                                                                                (epoch_end_time - start).total_seconds() / (epoch + 1 - args.start_epoch) ))
+            
 
-    if not args.dump_images:
-
-        if args.quant_bit != -1:
-            safe_save('./output/{}/psnr_quant{}'.format(args.exp_name, args.quant_bit), psnr_matrix)
-            safe_save('./output/{}/msssim_quant{}'.format(args.exp_name, args.quant_bit), msssim_matrix)
-        else:
-            safe_save('./output/{}/psnr'.format(args.exp_name), psnr_matrix)
-            safe_save('./output/{}/msssim'.format(args.exp_name), msssim_matrix)
-
-
-        # PSNR
-        print ('Diagonal Final Avg PSNR: {:5.2f}%'.format( np.mean([psnr_matrix[i,i] for i in range(len(taskcla))] )))
-        test_avg_psnr = np.mean(psnr_matrix[len(taskcla) - 1])
-        print ('Final Avg PSNR: {:5.2f}%'.format( np.mean(psnr_matrix[len(taskcla) - 1])))
-
-        bwt_psnr = np.mean((psnr_matrix[-1]-np.diag(psnr_matrix))[:-1])
-        print ('Backward transfer of psnr: {:5.2f}%'.format(bwt_psnr))
-
-        # MSSSIM
-        print ('Diagonal Final Avg MSSSIM: {:5.2f}%'.format( np.mean([msssim_matrix[i,i] for i in range(len(taskcla))] )))
-        test_avg_msssim = np.mean(msssim_matrix[len(taskcla) - 1])
-        print ('Final Avg msssim: {:5.2f}%'.format( np.mean(msssim_matrix[len(taskcla) - 1])))
-
-        bwt_msssim = np.mean((msssim_matrix[-1]-np.diag(msssim_matrix))[:-1])
-        print ('Backward transfer of msssim: {:5.2f}%'.format(bwt_msssim))
-
-        total_train_sec = 0
-        for key, value in train_time_dict.items():
-            total_train_sec += value
-
-        print('[Elapsed traing hours = {:.2f}h]'.format(total_train_sec / 3600))
-
-        log_dict = {
-            'test/avg_psnr': test_avg_psnr,
-            'test/bwt_psnr': bwt_psnr,
-            'test/avg_msssim': test_avg_msssim,
-            'text/bwt_msssim': bwt_msssim,
-            'test/train_hours': total_train_sec / 3600
+        save_checkpoint = {
+            'epoch': epoch+1,
+            'taskcla': taskcla,
+            'train_time': total_epoch_train_time,
+            'state_dict': best_model,
+            'train_best_psnr': train_best_psnr,
+            'train_best_msssim': train_best_msssim,
+            'val_best_psnr': val_best_psnr,
+            'val_best_msssim': val_best_msssim,
+            'optimizer': optimizer.state_dict(),
+            'per_task_masks': per_task_masks,
+            'per_best_masks': per_best_masks,
         }
-        print(log_dict)
-        print('-'*50)
-        print(taskcla)
-        print('-'*50)
-        print(args)
+        torch.save(save_checkpoint, './output/{}/model_mtl_val_best.pth'.format(args.exp_name))
+
 
 @torch.no_grad()
-def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_id, task_jd, mode):
+def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_id, mode):
     # Model Quantization
     if args.quant_bit != -1:
         cur_ckt = model.state_dict()
@@ -703,15 +704,10 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
         quant_weitht_list = []
         for k,v in cur_ckt.items():
             large_tf = (v.dim() in {2,4} and 'bias' not in k)
-
-            if True: #'real' in k or 'imag' in k:
-                quant_v, new_v = quantize_per_tensor(v, args.quant_bit, args.quant_axis if large_tf else -1)
-                valid_quant_v = quant_v[v!=0] # only include non-zero weights
-                quant_weitht_list.append(valid_quant_v.flatten())
-                cur_ckt[k] = new_v
-            else:
-                pass
-
+            quant_v, new_v = quantize_per_tensor(v, args.quant_bit, args.quant_axis if large_tf else -1)
+            valid_quant_v = quant_v[v!=0] # only include non-zero weights
+            quant_weitht_list.append(valid_quant_v.flatten())
+            cur_ckt[k] = new_v
         cat_param = torch.cat(quant_weitht_list)
         input_code_list = cat_param.tolist()
         unique, counts = np.unique(input_code_list, return_counts=True)
@@ -739,7 +735,7 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
     msssim_list = []
     if args.dump_images:
         from torchvision.utils import save_image
-        visual_dir = f'./output/{args.exp_name}/visualize_{args.quant_bit}/{task_id}/{task_jd}'
+        visual_dir = f'./output/{args.exp_name}/visualize/{task_id}'
         print(f'Saving predictions to {visual_dir}')
         if not os.path.isdir(visual_dir):
             os.makedirs(visual_dir)
@@ -747,78 +743,30 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
     time_list = []
     model.eval()
     for i, (data,  norm_idx) in enumerate(val_dataloader):
-        if i > 10 and args.debug:
-            break
+
         embed_input = pe(norm_idx)
-        if True:
-            task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
-            embed_task = pe(task_idx)
-            embed_input = torch.cat([embed_input, embed_task], 1)
+        task_idx = torch.tensor([(task_id+1) / (args.n_tasks + 1)])
+        embed_task = pe(task_idx)
+        embed_input = torch.cat([embed_input, embed_task], 1)
 
         if local_rank is not None:
             data = data.cuda(local_rank, non_blocking=True)
             embed_input = embed_input.cuda(local_rank, non_blocking=True)
         else:
-            data, embed_input = data.cuda(non_blocking=True), embed_input.cuda(non_blocking=True)
+            data,  embed_input = data.cuda(non_blocking=True), embed_input.cuda(non_blocking=True)
 
         # compute psnr and msssim
         fwd_num = 10 if args.eval_fps else 1
         for _ in range(fwd_num):
             start_time = datetime.now()
-            if args.subnet:
-                output_list = model(x=embed_input, task_id=task_id, mask=per_task_masks, mode=mode)
+            if True:
+                output_list = model(embed_input, task_id=task_id)
             else:
                 output_list = model(embed_input)
 
             torch.cuda.synchronize()
             # torch.cuda.current_stream().synchronize()
             time_list.append((datetime.now() - start_time).total_seconds())
-
-            if args.dump_images:
-                stem = model.stem(x=embed_input, task_id=task_id, mask=per_task_masks[task_id], mode=mode).view(embed_input.size(0), model.fc_dim, model.fc_h, model.fc_w)
-                l1 = model.layers[0](stem, mask=per_task_masks[task_id], mode=mode)
-                l2 = model.layers[1](l1, mask=per_task_masks[task_id], mode=mode)
-                l3 = model.layers[2](l2, mask=per_task_masks[task_id], mode=mode)
-                l4 = model.layers[3](l3, mask=per_task_masks[task_id], mode=mode)
-                l5 = model.layers[4](l4, mask=per_task_masks[task_id], mode=mode)
-
-                l1 = l1.squeeze(0).sum(0) / l1.squeeze(0).shape[0]
-                l2 = l2.squeeze(0).sum(0) / l2.squeeze(0).shape[0]
-                l3 = l3.squeeze(0).sum(0) / l3.squeeze(0).shape[0]
-                l4 = l4.squeeze(0).sum(0) / l4.squeeze(0).shape[0]
-                l5 = l5.squeeze(0).sum(0) / l5.squeeze(0).shape[0]
-
-                if False:
-                    save_image(l1, f'{visual_dir}/pred_l1.png')
-                    save_image(l2, f'{visual_dir}/pred_l2.png')
-                    save_image(l3, f'{visual_dir}/pred_l3.png')
-                    save_image(l4, f'{visual_dir}/pred_l4.png')
-                    save_image(l5, f'{visual_dir}/pred_l5.png')
-                else:
-                    plt.imshow(l1.cpu())
-                    plt.axis('off')
-                    plt.savefig(f'{visual_dir}/pred_{i}_l1.pdf', bbox_inches='tight')
-                    plt.close()
-
-                    plt.imshow(l2.cpu())
-                    plt.axis('off')
-                    plt.savefig(f'{visual_dir}/pred_{i}_l2.pdf', bbox_inches='tight')
-                    plt.close()
-
-                    plt.imshow(l3.cpu())
-                    plt.axis('off')
-                    plt.savefig(f'{visual_dir}/pred_{i}_l3.pdf', bbox_inches='tight')
-                    plt.close()
-
-                    plt.imshow(l4.cpu())
-                    plt.axis('off')
-                    plt.savefig(f'{visual_dir}/pred_{i}_l4.pdf', bbox_inches='tight')
-                    plt.close()
-
-                    plt.imshow(l5.cpu())
-                    plt.axis('off')
-                    plt.savefig(f'{visual_dir}/pred_{i}_l5.pdf', bbox_inches='tight')
-                    plt.close()
 
         # dump predictions
         if args.dump_images:
@@ -844,7 +792,10 @@ def evaluate(model, val_dataloader, pe, local_rank, args, per_task_masks, task_i
             if local_rank in [0, None]:
                 with open('./output/{}/rank0.txt'.format(args.exp_name), 'a') as f:
                     f.write(print_str + '\n')
+    model.train()
+
     return val_psnr, val_msssim
+
 
 if __name__ == '__main__':
     main()
